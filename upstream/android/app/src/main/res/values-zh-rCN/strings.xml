@@ -460,8 +460,7 @@
     <string name="settings_test_haptics">测试震动</string>
     <string name="settings_haptics_enable_first">请先打开触感反馈开关</string>
     <string name="settings_haptics_unavailable">请检查系统触感反馈是否开启，以及手机是否支持震动</string>
-    <string name="feedback_github_pending">GitHub（待配置）</string>
-    <string name="feedback_github_not_configured">GitHub 反馈地址尚未配置，后续更新后开放</string>
+    <string name="feedback_github">GitHub 问题反馈</string>
     <string name="settings_home_background">首页背景</string>
     <string name="settings_home_background_reset">恢复默认玻璃模糊背景</string>
     <string name="settings_personal_use_notice">由乘醉听箫鼓依据Codex开发，完全免费仅供个人使用，请勿付费或进行商业盈利。</string>

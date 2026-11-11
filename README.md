@@ -1,17 +1,19 @@
 # EWord
 
-中文、离线、免登录的 Android 文档工具。当前发布版本 **0.4.9**，支持 Android 10 及以上的 **ARM64** 设备。
+中文、离线、免登录的 Android 文档工具。当前发布版本 **0.4.10**，支持 Android 10 及以上的 **ARM64** 设备。
 
 0.4.9 支持在 XLSX 单元格和 PPTX 文字段落的原位置直接输入，不再弹出编辑对话框；支持另存副本。使用方式、限制和核验结果见 [0.4.9 说明](docs/RELEASE-0.4.9.md)。
 
+0.4.10 已补全设置中的 [GitHub 问题反馈入口](https://github.com/2012983335/EWord/issues)，见 [更新说明](docs/RELEASE-0.4.10.md)。
+
 ## 安装
 
-从[本仓库最新发布](https://github.com/2012983335/EWord/releases/latest) 下载 `EWord-0.4.9-offline-arm64.apk`，允许系统安装该来源的应用。已安装旧版时可覆盖安装；不要先卸载，以免丢失应用私有数据。更新必须使用相同签名。
+从[本仓库最新发布](https://github.com/2012983335/EWord/releases/latest) 下载 `EWord-0.4.10-offline-arm64.apk`，允许系统安装该来源的应用。已安装旧版时可覆盖安装；不要先卸载，以免丢失应用私有数据。更新必须使用相同签名。
 
 APK SHA-256：
 
 ```text
-4ef0b43f7044425e9fe6f6b98d00dbbf406f18cac15a1e2c76e048f5a2648a91
+49c7a5c568fd0a0932134a312615d541dd4c745afcc1531c87c05823efd01aaf
 ```
 
 ## 功能

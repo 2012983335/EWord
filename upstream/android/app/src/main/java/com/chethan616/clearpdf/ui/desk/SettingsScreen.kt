@@ -90,6 +90,7 @@ import java.util.Locale
 /** Artefact's repository: help, issues and source. */
 const val CLEARPDF_REPO = "https://github.com/Chethan616/ClearPDF"
 private const val FEEDBACK_BILIBILI = "https://space.bilibili.com/43259549?spm_id_from=333.1007.0.0"
+private const val FEEDBACK_GITHUB = "https://github.com/2012983335/EWord/issues"
 
 /** Settings, and its Licences page. */
 @Composable
@@ -216,9 +217,9 @@ private fun SettingsRoot(vm: AppViewModel, openLicences: () -> Unit, openGlass: 
         onDismiss = { feedback = false }, title = stringResource(R.string.home_report_problem),
         dismiss = stringResource(R.string.common_cancel), icon = LucideIcons.MessageSquare,
     ) {
-        SettingRow(LucideIcons.CodeXml, Candy.Grape, stringResource(R.string.feedback_github_pending), {
-            vm.tell(context.getString(R.string.feedback_github_not_configured))
-        }, first = true)
+        SettingRow(LucideIcons.CodeXml, Candy.Grape, stringResource(R.string.feedback_github), {
+            feedback = false; leaving = FEEDBACK_GITHUB
+        }, first = true, chevron = true)
         SettingRow(LucideIcons.ExternalLink, Candy.Sky, "Bilibili", { feedback = false; leaving = FEEDBACK_BILIBILI }, chevron = true)
     }
     leaving?.let { url ->

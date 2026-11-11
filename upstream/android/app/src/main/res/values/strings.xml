@@ -1517,8 +1517,7 @@
     <string name="settings_test_haptics">Test vibration</string>
     <string name="settings_haptics_enable_first">Turn on haptic feedback first</string>
     <string name="settings_haptics_unavailable">Check system touch feedback and whether this phone supports vibration</string>
-    <string name="feedback_github_pending">GitHub (coming later)</string>
-    <string name="feedback_github_not_configured">The GitHub feedback address has not been configured yet</string>
+    <string name="feedback_github">GitHub Issues</string>
     <string name="settings_home_background">Home background</string>
     <string name="settings_home_background_reset">Restore default frosted glass background</string>
     <string name="settings_personal_use_notice">Developed by 乘醉听箫鼓 using Codex. Completely free and for personal use only. Do not pay for it or use it for commercial profit.</string>
