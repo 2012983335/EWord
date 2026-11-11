@@ -103,7 +103,7 @@ enum class QuickTool(val id: String, @StringRes val label: Int, @StringRes val t
         val WORD = listOf(Edit, FillSign, SaveAs)
 
         /** A presentation's bar: a full-screen show first. */
-        val SLIDES = listOf(Present)
+        val SLIDES = listOf(Edit, SaveAs, Present)
 
         /** The bar for [doc]: an office document's own tools, else the PDF bar as arranged. */
         fun barFor(doc: com.chethan616.clearpdf.ui.OpenDocument, arranged: List<QuickTool>): List<QuickTool> = when {
@@ -162,7 +162,7 @@ fun AppViewModel.runQuickTool(doc: OpenDocument, tool: QuickTool) {
     }
     when (tool) {
         // a Word document is edited by its own engine: typing and formatting, not PDF editing
-        QuickTool.Edit -> if (doc.isOffice) startWordEdit(doc) else enterTool(doc, ViewerTool.Edit)
+        QuickTool.Edit -> if (doc.isSlides) startSlideTextEdit(doc) else if (doc.isOffice) startWordEdit(doc) else enterTool(doc, ViewerTool.Edit)
         QuickTool.Comment -> enterTool(doc, ViewerTool.Comment)
         QuickTool.Highlight -> enterTool(doc, ViewerTool.Markup)
         QuickTool.Draw -> enterTool(doc, ViewerTool.Draw)

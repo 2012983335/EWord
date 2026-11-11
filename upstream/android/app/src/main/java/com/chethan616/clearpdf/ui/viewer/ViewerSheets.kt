@@ -92,6 +92,7 @@ fun MoreSheet(vm: AppViewModel, doc: OpenDocument, anchor: Rect) {
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.viewer_save_in_place), LucideIcons.Save) { vm.saveInPlace(doc) })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.viewer_save_as_file), LucideIcons.SaveAs) { vm.saveCopyAs(doc) })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.viewer_details), LucideIcons.Info) { ctl.sheet = ViewerSheet.Details })
+        if (doc.isSlides) add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("编辑当前页文字", LucideIcons.FilePenLine) { vm.startSlideTextEdit(doc) })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("文档内搜索", LucideIcons.Search) { doc.selection.clear(); ctl.searching = true; ctl.sheet = ViewerSheet.None })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("跳转到页码", LucideIcons.ArrowUpDown) { ctl.goToPage = true; ctl.sheet = ViewerSheet.None })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("历史版本", LucideIcons.Undo2) { vm.toolScreen = com.chethan616.clearpdf.ui.ToolScreen.Vault(com.chethan616.clearpdf.engine.VaultKind.Version, doc) })

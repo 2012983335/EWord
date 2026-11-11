@@ -247,6 +247,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
             if (savedPageMode != doc.viewer.mode) doc.viewer.switchMode(savedPageMode)
             // a file left in Reading Mode reopens in it, unless it was opened for a tool
             readingMode = recent?.reading == true && pendingTool == null
+            inlineOffice = null
             document = doc
             safety.opened(doc)
             if (doc.info.signed) announceSignatures(doc)
@@ -287,9 +288,11 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     /** Leave the viewer: changes are saved first, as the reference does (no prompt). */
     fun closeDocument() {
         val doc = document ?: return
+        ++inlineRequest
         val eng = engine ?: return
         if (doc.controller.tool != ViewerTool.None) leaveTool(doc)
         viewModelScope.launch {
+            if (!commitOfficeInline(doc)) return@launch
             if (wordEditing === doc && !commitWordPara(doc)) return@launch
             // changes the file's place can't take (known read-only, or found so now) are offered as a copy
             if (doc.info.dirty || doc.notWrittenBack) {
@@ -442,6 +445,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     /** Save into the private working file. False means the user still needs to export a copy. */
     suspend fun save(doc: OpenDocument, quiet: Boolean = false): Boolean = withContext(kotlinx.coroutines.NonCancellable) { saveMutex.withLock {
         val eng = engine ?: return@withLock false
+        if (!commitOfficeInline(doc, includeComposing = !quiet)) return@withLock false
         if (!doc.info.dirty && !doc.notWrittenBack) return@withLock true
         try {
             doc.saveFailure = null
@@ -2641,6 +2645,128 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     /** The note open in the editor. */
     var openNote by mutableStateOf<String?>(null)
 
+    var inlineOffice by mutableStateOf<OfficeInlineDraft?>(null)
+        private set
+    private val inlineOfficeMutex = kotlinx.coroutines.sync.Mutex()
+    private var inlineRequest = 0L
+    private var inlineCheckpoint: kotlinx.coroutines.Job? = null
+
+    fun updateOfficeInline(draft: OfficeInlineDraft, value: androidx.compose.ui.text.input.TextFieldValue) {
+        if (!draft.acceptInput(value, inlineOffice)) return
+        inlineCheckpoint?.cancel()
+        inlineCheckpoint = null
+        if (!draft.dirty || !draft.canAutoSave) return
+        val doc = document?.takeIf { it.id == draft.docId } ?: return
+        inlineCheckpoint = viewModelScope.launch {
+            delay(1000)
+            inlineCheckpoint = null
+            if (document === doc && inlineOffice === draft && draft.canAutoSave) save(doc, quiet = true)
+        }
+    }
+
+    private suspend fun commitOfficeInline(doc: OpenDocument, includeComposing: Boolean = true): Boolean = inlineOfficeMutex.withLock {
+        val draft = inlineOffice?.takeIf { it.docId == doc.id } ?: return@withLock true
+        val eng = engine ?: return@withLock false
+        try {
+            while (draft.dirty && (includeComposing || draft.canAutoSave)) {
+                val snapshot = draft.value.text
+                when (val target = draft.target) {
+                    is OfficeInlineTarget.Cell -> eng.command { sheetSetCell(doc.id, target.sheet.toUInt(), target.span.row0, target.span.col0, snapshot) }
+                    is OfficeInlineTarget.Slide -> eng.command { slideSetParagraph(doc.id, target.page.toUInt(), target.index.toUInt(), snapshot) }
+                }
+                draft.acknowledge(snapshot)
+                refresh(doc)
+                if (!includeComposing) break
+            }
+            true
+        } catch (failure: Exception) {
+            doc.saveFailure = failure.userMessage
+            doc.notWrittenBack = true
+            tell("文字暂未保存：${failure.userMessage}")
+            false
+        }
+    }
+
+    fun finishOfficeInline(doc: OpenDocument, done: () -> Unit = {}) {
+        val request = ++inlineRequest
+        viewModelScope.launch {
+            do {
+                if (!commitOfficeInline(doc)) return@launch
+                save(doc)
+                if (doc.saveFailure != null) return@launch
+            } while (inlineOffice?.docId == doc.id && inlineOffice?.dirty == true)
+            if (request != inlineRequest || document !== doc) return@launch
+            inlineOffice = null
+            done()
+        }
+    }
+
+    fun beginCellInline(doc: OpenDocument, sheet: Int, cell: com.chethan616.clearpdf.core.CellSpan) {
+        if (doc.info.readOnlyReason != null) { tell(doc.info.readOnlyReason!!); return }
+        val target = OfficeInlineTarget.Cell(sheet, cell)
+        if (inlineOffice?.target == target && inlineOffice?.docId == doc.id) return
+        val request = ++inlineRequest
+        viewModelScope.launch {
+            if (!commitOfficeInline(doc)) return@launch
+            if (inlineOffice != null) { save(doc); if (doc.saveFailure != null) return@launch }
+            try {
+                val input = engine!!.command { sheetInput(doc.id, sheet.toUInt(), cell.row0, cell.col0) }
+                if (request == inlineRequest && document === doc) inlineOffice = OfficeInlineDraft(doc.id, target, input)
+            } catch (failure: Exception) { tell(failure.userMessage) }
+        }
+    }
+
+    fun startSlideTextEdit(doc: OpenDocument) {
+        if (doc.info.readOnlyReason != null) { tell(doc.info.readOnlyReason!!); return }
+        val request = ++inlineRequest
+        viewModelScope.launch {
+            if (!commitOfficeInline(doc)) return@launch
+            if (inlineOffice != null) { save(doc); if (doc.saveFailure != null) return@launch }
+            try {
+                val page = doc.viewer.currentPage
+                val boxes = org.json.JSONArray(engine!!.command { slideTextBoxes(doc.id, page.toUInt()) })
+                if (request != inlineRequest || document !== doc) return@launch
+                if (boxes.length() == 0) tell("本页没有可直接编辑的文字")
+                else activateSlideBox(doc, page, boxes.getJSONObject(0))
+            } catch (failure: Exception) { tell(failure.userMessage) }
+        }
+    }
+
+    private fun activateSlideBox(doc: OpenDocument, page: Int, hit: org.json.JSONObject) {
+        val target = OfficeInlineTarget.Slide(page, hit.getInt("index"), androidx.compose.ui.geometry.Rect(
+            hit.getDouble("x0").toFloat(), hit.getDouble("y0").toFloat(), hit.getDouble("x1").toFloat(), hit.getDouble("y1").toFloat()), hit.getDouble("size").toFloat())
+        inlineOffice = OfficeInlineDraft(doc.id, target, hit.getString("text"))
+        doc.controller.barsVisible = true
+    }
+    fun slideInlineTap(doc: OpenDocument, point: com.chethan616.clearpdf.ui.viewer.PagePoint) {
+        val request = ++inlineRequest
+        viewModelScope.launch {
+            if (!commitOfficeInline(doc)) return@launch
+            if (inlineOffice != null) { save(doc); if (doc.saveFailure != null) return@launch }
+            try {
+                val boxes = org.json.JSONArray(engine!!.command { slideTextBoxes(doc.id, point.page.toUInt()) })
+                val hit = (0 until boxes.length()).map { boxes.getJSONObject(it) }.lastOrNull {
+                    point.x >= it.getDouble("x0") - 3 && point.x <= it.getDouble("x1") + 3 &&
+                        point.y >= it.getDouble("y0") - 3 && point.y <= it.getDouble("y1") + 3
+                }
+                if (request != inlineRequest || document !== doc) return@launch
+                if (hit == null) {
+                    save(doc)
+                    if (doc.saveFailure == null) { inlineOffice = null; doc.controller.toggleBars() }
+                } else {
+                    activateSlideBox(doc, point.page, hit)
+                }
+            } catch (failure: Exception) { tell(failure.userMessage) }
+        }
+    }
+    fun sheetHistory(doc: OpenDocument, sheet: Int, redo: Boolean, done: () -> Unit) = job("正在更新表格…") { eng ->
+        eng.command { sheetCommand(doc.id, sheet.toUInt(), com.chethan616.clearpdf.core.CellSpan(0u, 0u, 0u, 0u), if (redo) "edit.redo" else "edit.undo", "") }
+        refresh(doc)
+        save(doc)
+        check(doc.saveFailure == null) { doc.saveFailure ?: "保存失败" }
+        done()
+    }
+
     /** The Word document being edited (typing and formatting with WordCraft), if one is. */
     var wordEditing by mutableStateOf<OpenDocument?>(null)
 
@@ -2747,6 +2873,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         viewModelScope.launch {
             val out = tempFile(format)
             val name = "${doc.title}.$format"
+            if (!commitOfficeInline(doc)) return@launch
             if (wordEditing === doc && !commitWordPara(doc)) return@launch
             runCatching { eng.command { exportOffice(doc.id, format, out.absolutePath) } }
                 .onSuccess { toolScreen = ToolScreen.Result(DocumentResult(out, name, doc)) }

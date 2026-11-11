@@ -13,11 +13,19 @@ use crate::{DocumentInfo, DocumentKind, LinkInfo, MobileError, PageInfo, Rendere
 
 /// One open presentation and its slides' text layers.
 pub(crate) struct SlideDeck {
-    pres: Arc<Presentation>,
+    state: Mutex<SlideState>,
     name: String,
     path: String,
     file_size: u64,
-    texts: Mutex<Vec<Option<Arc<PageText>>>>,
+    texts: Mutex<Vec<Option<(u64, Arc<PageText>)>>>,
+}
+
+struct SlideState {
+    pres: Arc<Presentation>,
+    bytes: Option<Vec<u8>>,
+    paths: Vec<String>,
+    dirty: bool,
+    generation: u64,
 }
 
 /// Worker threads a slide renders on (effects that blur need some).
@@ -29,28 +37,44 @@ impl SlideDeck {
             return Err(MobileError::Open("password-protected presentations can't be opened yet".into()));
         }
         let pres = deckcraft_pptx::import(bytes).map_err(|e| MobileError::Open(e.to_string()))?;
-        Ok(Self::of(path, pres, bytes.len()))
+        Self::of(path, pres, bytes.len(), (bytes.len() <= 64 * 1024 * 1024).then(|| bytes.to_vec()))
     }
 
     /// A PowerPoint 97-2003 presentation (.ppt): its slides' text in a deck of its size.
     pub(crate) fn open_ppt(path: &str, bytes: &[u8]) -> Result<SlideDeck, MobileError> {
         let pres = crate::ppt::import(bytes).map_err(MobileError::Open)?;
-        Ok(Self::of(path, pres, bytes.len()))
+        Self::of(path, pres, bytes.len(), None)
     }
 
-    fn of(path: &str, pres: Presentation, size: usize) -> SlideDeck {
+    fn of(path: &str, pres: Presentation, size: usize, bytes: Option<Vec<u8>>) -> Result<SlideDeck, MobileError> {
         let n = pres.slides.len();
-        SlideDeck {
-            pres: Arc::new(pres),
+        // Unsupported package relationships must not disable the existing reader.
+        let paths = bytes.as_deref().and_then(|b| crate::slide_text::paths(b).ok()).unwrap_or_default();
+        Ok(SlideDeck {
+            state: Mutex::new(SlideState { pres: Arc::new(pres), bytes, paths, dirty: false, generation: 0 }),
             name: crate::office::file_name(path),
             path: path.to_string(),
             file_size: size as u64,
             texts: Mutex::new(vec![None; n]),
-        }
+        })
+    }
+
+    fn update_text(&self, page: u32, index: u32, text: String, paragraph: bool) -> Result<(), MobileError> {
+        let i = self.slide(page)?;
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = state.bytes.as_ref().ok_or_else(|| MobileError::Command("旧版 PPT 仅支持阅读".into()))?;
+        let path = state.paths.get(i).ok_or_else(|| MobileError::Command("找不到幻灯片".into()))?;
+        let updated = if paragraph { crate::slide_text::replace_paragraph(bytes, path, index, &text)? } else { crate::slide_text::replace(bytes, path, index, &text)? };
+        let pres = deckcraft_pptx::import(&updated).map_err(|e| MobileError::Command(e.to_string()))?;
+        state.pres = Arc::new(pres);
+        state.bytes = Some(updated);
+        state.dirty = true;
+        state.generation += 1;
+        Ok(())
     }
 
     fn slide(&self, page: u32) -> Result<usize, MobileError> {
-        let n = self.pres.slides.len();
+        let n = self.state.lock().unwrap_or_else(PoisonError::into_inner).pres.slides.len();
         let i = page as usize;
         if i < n {
             Ok(i)
@@ -62,7 +86,8 @@ impl SlideDeck {
 
 impl OfficeDoc for SlideDeck {
     fn info(&self, id: u64) -> DocumentInfo {
-        let p = &self.pres;
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let p = &state.pres;
         let (w, h) = (p.slide_size.width as f32, p.slide_size.height as f32);
         let some = |v: &str| (!v.trim().is_empty()).then(|| v.to_string());
         DocumentInfo {
@@ -81,13 +106,13 @@ impl OfficeDoc for SlideDeck {
             file_size: self.file_size,
             encrypted: false,
             tagged: false,
-            read_only_reason: Some("Presentations open for viewing in this version".into()),
+            read_only_reason: (state.bytes.is_none() || state.paths.len() != p.slides.len()).then(|| "此文件暂不支持文字编辑；请使用 64 MiB 以内的标准 PPTX 文件，旧版 PPT 请先转换".into()),
             allows_printing: true,
             allows_copying: true,
             allows_annotation: false,
             allows_form_filling: false,
             allows_assembly: false,
-            dirty: false,
+            dirty: state.dirty,
             undo: None,
             redo: None,
             fields: 0,
@@ -95,7 +120,7 @@ impl OfficeDoc for SlideDeck {
             attachments: 0,
             signed: false,
             comments_hidden: false,
-            generation: 0,
+            generation: state.generation,
         }
     }
 
@@ -106,7 +131,8 @@ impl OfficeDoc for SlideDeck {
             opts.offset = (-f64::from(t.x), -f64::from(t.y));
             opts.size = Some((t.width.max(1), t.height.max(1)));
         }
-        let img = deckcraft_render::render_slide(&self.pres, i, &opts);
+        let pres = self.state.lock().unwrap_or_else(PoisonError::into_inner).pres.clone();
+        let img = deckcraft_render::render_slide(&pres, i, &opts);
         if img.width == 0 || img.height == 0 {
             return Err(MobileError::Render(format!("slide {} could not be drawn", i + 1)));
         }
@@ -115,12 +141,13 @@ impl OfficeDoc for SlideDeck {
 
     fn page_text(&self, page: u32) -> Result<Arc<PageText>, MobileError> {
         let i = self.slide(page)?;
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let mut texts = self.texts.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(Some(t)) = texts.get(i) {
-            return Ok(t.clone());
+        if let Some(Some((generation, t))) = texts.get(i) {
+            if *generation == state.generation { return Ok(t.clone()); }
         }
         let mut glyphs = Vec::new();
-        for pt in deckcraft_render::place_slide(&self.pres, i).texts {
+        for pt in deckcraft_render::place_slide(&state.pres, i).texts {
             for run in &pt.layout.runs {
                 if run.size <= 0.0 {
                     continue;
@@ -139,14 +166,15 @@ impl OfficeDoc for SlideDeck {
         }
         let text = Arc::new(pdfcraft_render::text::layout(glyphs));
         if let Some(slot) = texts.get_mut(i) {
-            *slot = Some(text.clone());
+            *slot = Some((state.generation, text.clone()));
         }
         Ok(text)
     }
 
     fn links(&self, page: u32) -> Result<Vec<LinkInfo>, MobileError> {
         let i = self.slide(page)?;
-        Ok(deckcraft_render::place_slide(&self.pres, i)
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(deckcraft_render::place_slide(&state.pres, i)
             .links
             .into_iter()
             .filter_map(|l| match &l.link.action {
@@ -160,13 +188,50 @@ impl OfficeDoc for SlideDeck {
     }
 
     fn export(&self, format: &str) -> Result<Vec<u8>, MobileError> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         match format {
-            "pdf" => deckcraft_pdf::export(&self.pres, &deckcraft_pdf::PdfOptions::default()).map_err(|e| MobileError::Command(e.to_string())),
-            "pptx" => deckcraft_pptx::export(&self.pres).map_err(|e| MobileError::Command(e.to_string())),
+            "pdf" => deckcraft_pdf::export(&state.pres, &deckcraft_pdf::PdfOptions::default()).map_err(|e| MobileError::Command(e.to_string())),
+            "pptx" => match &state.bytes {
+                Some(bytes) => Ok(bytes.clone()),
+                None => deckcraft_pptx::export(&state.pres).map_err(|e| MobileError::Command(e.to_string())),
+            },
             _ => Err(crate::office::unknown_format(DocumentKind::Slides, format)),
         }
     }
 
+    fn save(&self, path: &str) -> Result<(), MobileError> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = state.bytes.as_ref().ok_or_else(|| MobileError::Command("旧版 PPT 仅支持阅读".into()))?;
+        let pending = format!("{path}.pending");
+        std::fs::write(&pending, bytes).map_err(|e| MobileError::Command(e.to_string()))?;
+        std::fs::rename(&pending, path).map_err(|e| MobileError::Command(e.to_string()))?;
+        state.dirty = false;
+        Ok(())
+    }
+
+    fn slide_texts(&self, page: u32) -> Result<String, MobileError> {
+        let i = self.slide(page)?;
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = state.bytes.as_ref().ok_or_else(|| MobileError::Command("旧版 PPT 仅支持阅读".into()))?;
+        let path = state.paths.get(i).ok_or_else(|| MobileError::Command("找不到幻灯片".into()))?;
+        serde_json::to_string(&crate::slide_text::texts(bytes, path)?).map_err(|e| MobileError::Command(e.to_string()))
+    }
+
+    fn slide_text_boxes(&self, page: u32) -> Result<String, MobileError> {
+        let i = self.slide(page)?;
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = state.bytes.as_ref().ok_or_else(|| MobileError::Command("此文件仅支持阅读".into()))?;
+        let path = state.paths.get(i).ok_or_else(|| MobileError::Command("找不到幻灯片".into()))?;
+        crate::slide_text::boxes(bytes, path, &state.pres, i)
+    }
+
+    fn slide_set_text(&self, page: u32, index: u32, text: String) -> Result<(), MobileError> {
+        self.update_text(page, index, text, false)
+    }
+
+    fn slide_set_paragraph(&self, page: u32, index: u32, text: String) -> Result<(), MobileError> {
+        self.update_text(page, index, text, true)
+    }
     fn release_memory(&self) {
         let mut texts = self.texts.lock().unwrap_or_else(PoisonError::into_inner);
         texts.iter_mut().for_each(|t| *t = None);

@@ -11,5 +11,6 @@
 /verification/OFFLINE_TRANSLATION_RESEARCH.md
 /dist/*
 !/dist/EWord-0.4.7-offline-arm64.sha256
+!/dist/EWord-0.4.9-offline-arm64.sha256
 /upstream/HANDOFF.md
 /upstream/PLAN.md

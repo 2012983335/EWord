@@ -66,6 +66,9 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.height
 import com.chethan616.clearpdf.engine.Engine
 import com.chethan616.clearpdf.ui.glass.glass
@@ -84,8 +87,8 @@ private const val SPARE_ROWS = 40
 private const val SPARE_COLS = 8
 
 /** The heading strips: column letters on top, row numbers at the left (points). */
-private const val HEAD_H = 20f
-private const val HEAD_W = 36f
+internal const val HEAD_H = 20f
+internal const val HEAD_W = 36f
 
 /** One sheet's layout: where every row and column starts (points from A1), its merges and freeze. */
 internal class SheetLayout(val info: SheetInfo, val colX: FloatArray, val rowY: FloatArray, val merges: List<CellSpan>) {
@@ -137,6 +140,7 @@ class SheetGridState internal constructor(private val eng: Engine, private val d
     var hit by mutableIntStateOf(0)
     /** Bumped when the workbook changed: the layout and cells are fetched again. */
     var version by mutableIntStateOf(0)
+    var viewport by mutableStateOf(androidx.compose.ui.unit.IntSize.Zero)
 
     internal suspend fun loadSheets() {
         sheets = runCatching { eng.command { sheets(docId) } }.getOrDefault(emptyList())
@@ -209,6 +213,8 @@ fun SheetGrid(
     top: Float = 0f,
     onCell: ((CellSpan?) -> Unit)? = null,
     onDoubleTapCell: ((CellSpan) -> Unit)? = null,
+    instantTap: Boolean = false,
+    inline: (@Composable () -> Unit)? = null,
 ) {
     val c = pdfColors
     val sheetSurface = if (c.dark) Color(0xFF18192F) else Color.White
@@ -264,12 +270,13 @@ fun SheetGrid(
         Canvas(
             Modifier
                 .fillMaxSize()
+                .onSizeChanged { state.viewport = it }
                 .panZoomFling(state, l, px, flinger)
                 .pointerInput(l, onCell, onDoubleTapCell) {
                     detectTapGestures(
                         onPress = { flinger[0]?.cancel() },
                         onTap = { p -> onCell?.invoke(cellAt(p)) },
-                        onDoubleTap = { p ->
+                        onDoubleTap = if (instantTap) null else { p ->
                             val cell = cellAt(p)
                             if (cell != null && onDoubleTapCell != null) onDoubleTapCell(cell)
                             else {
@@ -284,6 +291,7 @@ fun SheetGrid(
                 drawSheet(l, state.blocks, state.current, px * state.scale, state.pan, measurer, sheetSurface, c.text, c.dark, state.hits.getOrNull(state.hit), state.selected)
             }
         }
+        inline?.invoke()
     }
 }
 
@@ -297,22 +305,37 @@ fun SheetGrid(
 fun SheetViewer(vm: AppViewModel, doc: OpenDocument) {
     val eng = vm.engine ?: return
     val grid = rememberSheetGrid(eng, doc.id)
-    val top = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this) + 56.dp.toPx() }
-    androidx.compose.material3.MaterialTheme {
-        Box(Modifier.fillMaxSize()) {
-            SheetGrid(grid, top = top, onCell = { grid.selected = it })
-            Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Color.White).statusBarsPadding()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.TextButton(onClick = { vm.closeDocument() }) { Text("返回") }
-                    Text(doc.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("只读", modifier = Modifier.padding(16.dp))
-                }
-            }
-            LazyRow(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.White).navigationBarsPadding()) {
-                items(grid.sheets.size) { index ->
-                    androidx.compose.material3.TextButton(onClick = { grid.show(index) }) {
-                        Text(grid.sheets[index].name, color = if (grid.current == index) Color(0xFF345CDA) else Color.Gray)
-                    }
+    val colors = clear
+    val draft = vm.inlineOffice?.takeIf { it.docId == doc.id }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    androidx.activity.compose.BackHandler(enabled = draft != null) { keyboard?.hide(); vm.finishOfficeInline(doc) }
+    LaunchedEffect(doc.info.generation) { grid.changed() }
+    Column(Modifier.fillMaxSize().background(colors.desk).statusBarsPadding().navigationBarsPadding().then(if (draft != null) Modifier.imePadding() else Modifier)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.TextButton(onClick = { keyboard?.hide(); vm.closeDocument() }) { Text("返回") }
+            Text(doc.name, color = colors.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            androidx.compose.material3.TextButton(onClick = { keyboard?.hide(); vm.saveCopyAs(doc) }) { Text("另存为") }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val cell = grid.selected
+            Text(cell?.let { "${columnName(it.col0.toInt())}${it.row0 + 1u}" } ?: "点击单元格直接输入", color = colors.inkSoft, modifier = Modifier.weight(1f).padding(start = 16.dp))
+            androidx.compose.material3.TextButton(enabled = doc.info.undo != null, onClick = { keyboard?.hide(); vm.finishOfficeInline(doc) { vm.sheetHistory(doc, grid.current, false) { grid.changed() } } }) { Text("撤销") }
+            androidx.compose.material3.TextButton(enabled = doc.info.redo != null, onClick = { keyboard?.hide(); vm.finishOfficeInline(doc) { vm.sheetHistory(doc, grid.current, true) { grid.changed() } } }) { Text("重做") }
+            if (draft != null) androidx.compose.material3.TextButton(onClick = { keyboard?.hide(); vm.finishOfficeInline(doc) }) { Text("完成") }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            SheetGrid(grid, instantTap = true, onCell = {
+                grid.selected = it
+                if (it != null) vm.beginCellInline(doc, grid.current, it) else { keyboard?.hide(); vm.finishOfficeInline(doc) }
+            }, inline = {
+                val target = draft?.target as? com.chethan616.clearpdf.ui.OfficeInlineTarget.Cell
+                if (draft != null && target != null && target.sheet == grid.current) SheetInlineInput(vm, doc, grid, draft, target.span)
+            })
+        }
+        LazyRow(Modifier.fillMaxWidth().background(colors.frost)) {
+            items(grid.sheets.size) { index ->
+                if (!grid.sheets[index].hidden) androidx.compose.material3.TextButton(onClick = { keyboard?.hide(); vm.finishOfficeInline(doc) { grid.show(index) } }) {
+                    Text(grid.sheets[index].name, color = if (grid.current == index) Color(0xFF345CDA) else colors.inkSoft)
                 }
             }
         }

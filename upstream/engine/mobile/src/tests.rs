@@ -904,6 +904,170 @@ fn a_workbook_is_edited_recalculated_undone_and_saved() {
 }
 
 #[test]
+fn slide_text_edit_preserves_other_parts_and_survives_save() {
+    use std::io::{Cursor, Read};
+    fn parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        (0..zip.len()).map(|i| {
+            let mut file = zip.by_index(i).unwrap();
+            let name = file.name().to_string();
+            let mut content = Vec::new();
+            file.read_to_end(&mut content).unwrap();
+            (name, content)
+        }).collect()
+    }
+    let source = include_bytes!("../../../../verification/fixtures/meeting.pptx");
+    let path = scratch().join("Text-edit.pptx");
+    std::fs::write(&path, source).unwrap();
+    let s = MobileSession::new();
+    let id = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    let before = s.document(id).unwrap();
+    assert!(before.read_only_reason.is_none());
+    // Populate the text cache before editing: search must subsequently reflect the edit.
+    s.page_plain_text(id, 0).unwrap();
+    let runs: Vec<String> = serde_json::from_str(&s.slide_texts(id, 0).unwrap()).unwrap();
+    assert!(!runs.is_empty());
+    let value = "项目更新 <Review> & progress \"2026\"";
+    s.slide_set_text(id, 0, 0, value.into()).unwrap();
+    assert!(s.document(id).unwrap().dirty);
+    assert!(s.document(id).unwrap().generation > before.generation);
+    assert!(s.page_plain_text(id, 0).unwrap().contains("Review"));
+    assert!(s.render_page(id, 0, 0.3, None).is_ok());
+    assert!(s.slide_set_text(id, 999, 0, "x".into()).is_err());
+    assert!(s.slide_set_text(id, 0, 99999, "x".into()).is_err());
+    assert!(s.slide_set_text(id, 0, 0, "bad\0text".into()).is_err());
+    s.save_office(id, path.to_string_lossy().into_owned()).unwrap();
+    assert!(!s.document(id).unwrap().dirty);
+    assert_eq!(std::fs::read(&path).unwrap(), s.office(id).unwrap().export("pptx").unwrap());
+    let original_parts = parts(source);
+    let changed_parts = parts(&std::fs::read(&path).unwrap());
+    assert_eq!(original_parts.keys().collect::<Vec<_>>(), changed_parts.keys().collect::<Vec<_>>());
+    let changed_slide = crate::slide_text::paths(source).unwrap()[0].clone();
+    for (name, bytes) in original_parts {
+        if name != changed_slide { assert_eq!(bytes, changed_parts[&name], "changed {name}"); }
+    }
+    let again = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    let loaded: Vec<String> = serde_json::from_str(&s.slide_texts(again, 0).unwrap()).unwrap();
+    assert_eq!(loaded[0], value);
+    assert_eq!(loaded[1..], runs[1..]);
+    // Clearing a text run is a real edit, not removal of its formatting or shape.
+    s.slide_set_text(again, 0, 0, "".into()).unwrap();
+    s.slide_set_text(again, 0, 0, "恢复文字".into()).unwrap();
+    let loaded: Vec<String> = serde_json::from_str(&s.slide_texts(again, 0).unwrap()).unwrap();
+    assert_eq!(loaded[0], "恢复文字");
+}
+
+#[test]
+fn slide_text_edit_refuses_digitally_signed_packages() {
+    use std::io::{Cursor, Write};
+    let source = include_bytes!("../../../../verification/fixtures/meeting.pptx");
+    let mut input = zip::ZipArchive::new(Cursor::new(source)).unwrap();
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for i in 0..input.len() { output.raw_copy_file(input.by_index(i).unwrap()).unwrap(); }
+    output.start_file("_xmlsignatures/sig1.xml", zip::write::SimpleFileOptions::default()).unwrap();
+    output.write_all(b"<Signature/>").unwrap();
+    let signed = output.finish().unwrap().into_inner();
+    let path = crate::slide_text::paths(&signed).unwrap()[0].clone();
+    assert!(crate::slide_text::replace(&signed, &path, 0, "changed").is_err());
+    assert!(crate::slide_text::replace_paragraph(&signed, &path, 0, "changed").is_err());
+    assert_eq!(crate::slide_text::texts(&signed, &path).unwrap(), crate::slide_text::texts(source, &path).unwrap());
+}
+
+#[test]
+fn spreadsheet_edits_chinese_numbers_and_formulas_across_sheets() {
+    let path = scratch().join("Chinese-edit.xlsx");
+    std::fs::write(&path, include_bytes!("../../../../verification/fixtures/daily.xlsx")).unwrap();
+    let s = MobileSession::new();
+    let id = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    let names: Vec<_> = s.sheets(id).unwrap().iter().map(|sheet| sheet.name.clone()).collect();
+    let money = names.iter().position(|n| n == "收支记录").unwrap() as u32;
+    let meeting = names.iter().position(|n| n == "会议安排").unwrap() as u32;
+    s.sheet_set_cell(id, money, 1, 0, "测试用品".into()).unwrap();
+    s.sheet_set_cell(id, money, 1, 1, "125.5".into()).unwrap();
+    s.sheet_set_cell(id, money, 2, 1, "=B2*2".into()).unwrap();
+    s.sheet_set_cell(id, meeting, 1, 0, "三号会议室".into()).unwrap();
+    s.save_office(id, path.to_string_lossy().into_owned()).unwrap();
+    let again = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    assert_eq!(s.sheets(again).unwrap().iter().map(|sheet| sheet.name.clone()).collect::<Vec<_>>(), names);
+    assert_eq!(s.sheet_input(again, money, 1, 0).unwrap(), "测试用品");
+    assert_eq!(s.sheet_input(again, money, 1, 1).unwrap(), "125.5");
+    assert_eq!(s.sheet_input(again, money, 2, 1).unwrap(), "=B2*2");
+    assert_eq!(s.sheet_cells(again, money, 2, 1, 1, 1).unwrap()[0].text, "251");
+    assert_eq!(s.sheet_input(again, meeting, 1, 0).unwrap(), "三号会议室");
+    assert_eq!(s.sheet_input(again, money, 0, 25).unwrap(), "横向滚动验收");
+}
+
+#[test]
+fn slide_inline_boxes_distinguish_identical_text_and_keep_deleted_frames_editable() {
+    let source = include_bytes!("../../../../verification/fixtures/meeting.pptx");
+    let mut pres = deckcraft_pptx::import(source).unwrap();
+    let slide = Arc::make_mut(&mut pres.slides[0]);
+    let mut duplicate = slide.shapes[0].clone();
+    duplicate.id = deckcraft_model::ShapeId(999);
+    duplicate.xfrm.as_mut().unwrap().y += 180.0;
+    slide.shapes.push(duplicate);
+    let path = scratch().join("Inline.pptx");
+    std::fs::write(&path, deckcraft_pptx::export(&pres).unwrap()).unwrap();
+    let s = MobileSession::new();
+    let id = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    let boxes: Vec<Value> = serde_json::from_str(&s.slide_text_boxes(id, 0).unwrap()).unwrap();
+    assert_eq!(boxes.len(), 2, "{boxes:?}");
+    assert_eq!(boxes[0]["text"], boxes[1]["text"]);
+    assert_ne!(boxes[0]["index"], boxes[1]["index"]);
+    assert!((boxes[1]["y0"].as_f64().unwrap() - boxes[0]["y0"].as_f64().unwrap() - 180.0).abs() < 1.0);
+    for b in &boxes {
+        assert!(b["x1"].as_f64().unwrap() > b["x0"].as_f64().unwrap());
+        assert!(b["y1"].as_f64().unwrap() > b["y0"].as_f64().unwrap());
+    }
+    let index = boxes[1]["index"].as_u64().unwrap() as u32;
+    s.slide_set_paragraph(id, 0, index, "直接修改第二个文本框".into()).unwrap();
+    let edited: Vec<Value> = serde_json::from_str(&s.slide_text_boxes(id, 0).unwrap()).unwrap();
+    assert_eq!(edited[0]["text"], boxes[0]["text"]);
+    assert_eq!(edited[1]["text"], "直接修改第二个文本框");
+    s.slide_set_paragraph(id, 0, index, "".into()).unwrap();
+    let boxes: Vec<Value> = serde_json::from_str(&s.slide_text_boxes(id, 0).unwrap()).unwrap();
+    assert!(boxes.iter().any(|b| b["index"].as_u64() == Some(u64::from(index))));
+    s.slide_set_paragraph(id, 0, index, "直接修改第二个文本框".into()).unwrap();
+    s.save_office(id, path.to_string_lossy().into_owned()).unwrap();
+}
+
+#[test]
+fn inline_paragraph_edit_preserves_run_styles_and_can_remove_a_soft_break() {
+    use std::io::{Cursor, Read};
+    fn styles(bytes: &[u8]) -> Vec<String> {
+        let path = crate::slide_text::paths(bytes).unwrap()[0].clone();
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut xml = String::new();
+        archive.by_name(&path).unwrap().read_to_string(&mut xml).unwrap();
+        let doc = roxmltree::Document::parse(&xml).unwrap();
+        doc.descendants().filter(|n| n.is_element() && n.tag_name().name() == "rPr" && n.parent().is_some_and(|p| p.tag_name().name() == "r"))
+            .map(|n| xml[n.range()].to_string()).collect()
+    }
+    let source = include_bytes!("../../../../verification/fixtures/meeting.pptx");
+    let mut pres = deckcraft_pptx::import(source).unwrap();
+    let slide = Arc::make_mut(&mut pres.slides[0]);
+    let para = &mut slide.shapes[0].text.as_mut().unwrap().paragraphs[0];
+    let mut first = para.runs[0].clone(); first.text = "before ".into(); first.props.bold = Some(true);
+    let mut last = first.clone(); last.text = "after".into(); last.props.bold = Some(false); last.props.italic = Some(true);
+    let mut br = first.clone(); br.text.clear(); br.kind = deckcraft_model::text::RunKind::Break;
+    para.runs = vec![first, br, last];
+    let original = deckcraft_pptx::export(&pres).unwrap();
+    let path = scratch().join("Paragraph-styles.pptx");
+    std::fs::write(&path, &original).unwrap();
+    let s = MobileSession::new();
+    let id = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    s.slide_set_paragraph(id, 0, 0, "before 调整 <&> after".into()).unwrap();
+    let boxes: Vec<Value> = serde_json::from_str(&s.slide_text_boxes(id, 0).unwrap()).unwrap();
+    assert_eq!(boxes[0]["text"], "before 调整 <&> after");
+    let updated = s.office(id).unwrap().export("pptx").unwrap();
+    assert_eq!(styles(&updated), styles(&original));
+    s.save_office(id, path.to_string_lossy().into_owned()).unwrap();
+    let reopened = s.open(path.to_string_lossy().into_owned(), None).unwrap().id;
+    let boxes: Vec<Value> = serde_json::from_str(&s.slide_text_boxes(reopened, 0).unwrap()).unwrap();
+    assert_eq!(boxes[0]["text"], "before 调整 <&> after");
+}
+
+#[test]
 fn a_word_document_is_typed_in_formatted_undone_and_saved() {
     let s = MobileSession::new();
     let path = word_file("Hello world", "Typing.docx");

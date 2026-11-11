@@ -228,6 +228,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
                 when {
                     vm.wordEditing == doc && at != null -> vm.wordTap(doc, at)
                     selection.selection != null -> selection.clear()
+                    doc.isSlides && doc.info.readOnlyReason == null && at != null && !ctl.searching -> vm.slideInlineTap(doc, at)
                     ctl.tool == ViewerTool.Edit -> vm.editTap(doc, at)
                     vm.tapField(doc, at) -> Unit
                     vm.tapComment(doc, at) -> Unit
@@ -433,11 +434,13 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
         // the Read Aloud player takes the bottom bar's place
         // while typing on the page, the bar (with its formatting) rides above the keyboard
-        if (vm.readAloud == null && vm.fieldActions == null) Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).then(if (vm.editing != null || vm.wordEditing == doc) Modifier.imePadding() else Modifier)) {
+        if (vm.readAloud == null && vm.fieldActions == null) Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).then(if (vm.editing != null || vm.wordEditing == doc || vm.inlineOffice?.docId == doc.id) Modifier.imePadding() else Modifier)) {
             vm.success?.let { SuccessBannerView(it, onClose = { vm.success = null }) }
             GlassBars(ctl.barsVisible && !ctl.searching && !vm.readingMode, fromTop = false) {
                 Column(barSides) {
-                    if (vm.wordEditing == doc) {
+                    if (doc.isSlides && vm.inlineOffice?.docId == doc.id) {
+                        SlideInlineDock(vm, doc)
+                    } else if (vm.wordEditing == doc) {
                         WordEditDock(vm, doc)
                     } else if (ctl.tool == ViewerTool.None) {
                         QuickToolbar(
@@ -461,6 +464,7 @@ fun ViewerScreen(vm: AppViewModel, doc: OpenDocument) {
         }
 
         // The active tool's sheets, over everything.
+        if (doc.isSlides) SlideInlineLayer(vm, doc)
         ToolSheets(vm, doc)
 
         // Word editing: the caret and selection over the pages, and the keyboard's field

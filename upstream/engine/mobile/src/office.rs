@@ -42,6 +42,21 @@ pub(crate) trait OfficeDoc: Send + Sync {
         Err(MobileError::Command("this document can't be edited yet, so there is nothing to save".into()))
     }
 
+    fn slide_texts(&self, _page: u32) -> Result<String, MobileError> {
+        Err(MobileError::Command("此文件不支持幻灯片文字编辑".into()))
+    }
+
+    fn slide_text_boxes(&self, _page: u32) -> Result<String, MobileError> {
+        Err(MobileError::Command("此文件不支持原位编辑".into()))
+    }
+
+    fn slide_set_paragraph(&self, page: u32, index: u32, text: String) -> Result<(), MobileError> {
+        self.slide_set_text(page, index, text)
+    }
+    fn slide_set_text(&self, _page: u32, _index: u32, _text: String) -> Result<(), MobileError> {
+        Err(MobileError::Command("此文件不支持幻灯片文字编辑".into()))
+    }
+
     /// A Word document, which the app edits with WordCraft's commands.
     fn as_word(&self) -> Option<&crate::word::WordDocument> {
         None

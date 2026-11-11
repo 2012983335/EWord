@@ -30,6 +30,7 @@ mod photo;
 mod ppt;
 mod sheets;
 mod slides;
+mod slide_text;
 
 pub use photo::PhotoEditor;
 pub use sheets::{CellEdge, CellSpan, CellView, SheetAxes, SheetInfo};
@@ -946,6 +947,22 @@ impl MobileSession {
     /// What the formula bar shows for a cell: its formula, else its value as typed.
     pub fn sheet_input(&self, doc: u64, sheet: u32, row: u32, col: u32) -> Result<String, MobileError> {
         self.with_sheets(doc, |b| b.input(sheet, row, col))
+    }
+
+    /// Existing text runs on a slide, as JSON. Edits preserve the original OOXML package.
+    pub fn slide_texts(&self, doc: u64, page: u32) -> Result<String, MobileError> {
+        self.office(doc).ok_or(MobileError::NoDocument(doc))?.slide_texts(page)
+    }
+
+    pub fn slide_text_boxes(&self, doc: u64, page: u32) -> Result<String, MobileError> {
+        self.office(doc).ok_or(MobileError::NoDocument(doc))?.slide_text_boxes(page)
+    }
+
+    pub fn slide_set_paragraph(&self, doc: u64, page: u32, index: u32, text: String) -> Result<(), MobileError> {
+        self.office(doc).ok_or(MobileError::NoDocument(doc))?.slide_set_paragraph(page, index, text)
+    }
+    pub fn slide_set_text(&self, doc: u64, page: u32, index: u32, text: String) -> Result<(), MobileError> {
+        self.office(doc).ok_or(MobileError::NoDocument(doc))?.slide_set_text(page, index, text)
     }
 
     /// The sheets of workbook `doc`, in tab order.

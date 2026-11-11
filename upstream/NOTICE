@@ -124,3 +124,5 @@ zh-Hans -> en 2.1. File names, original publisher locations, sizes and SHA-256
 are recorded in android/app/src/main/assets/translation/registry.json.
 Model licence: android/app/src/main/assets/licences/MPL-translation-models.txt.
 Source and licence: https://github.com/mozilla/firefox-translations-models
+
+EWord 0.4.8 slide text editing reuses zip 3.0.0 (MIT) and roxmltree 0.20.0 (MIT OR Apache-2.0), already present in the dependency graph. Licence texts are bundled in android/app/src/main/assets/licences/.

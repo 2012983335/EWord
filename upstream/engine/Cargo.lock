@@ -144,10 +144,12 @@ dependencies = [
  "pdfcraft-automation",
  "pdfcraft-engine",
  "pdfcraft-render",
+ "roxmltree",
  "serde_json",
  "thiserror 2.0.21",
  "uniffi",
  "wordcraft-engine",
+ "zip",
 ]
 
 [[package]]
