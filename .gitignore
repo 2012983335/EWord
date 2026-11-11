@@ -1,0 +1,15 @@
+.tools/
+*.apk
+*.jks
+*.keystore
+**/key.properties
+**/local.properties
+/output/
+/verification/reports/
+/verification/RESULTS.md
+/verification/FEATURE_AUDIT.md
+/verification/OFFLINE_TRANSLATION_RESEARCH.md
+/dist/*
+!/dist/EWord-0.4.7-offline-arm64.sha256
+/upstream/HANDOFF.md
+/upstream/PLAN.md

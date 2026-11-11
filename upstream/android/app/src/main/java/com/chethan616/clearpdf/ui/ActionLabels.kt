@@ -1,0 +1,25 @@
+package com.chethan616.clearpdf.ui
+
+internal fun actionLabel(label: String): String = when (label) {
+    "Add drawing" -> "添加画线"
+    "Add image", "Pictures" -> "插入图片"
+    "Add signature", "Add initials" -> "插入签名"
+    "Typing", "Replace text" -> "修改文字"
+    "Add text box" -> "添加文本框"
+    "Add highlight" -> "添加高亮"
+    "Add underline" -> "添加下划线"
+    "Add strikethrough" -> "添加删除线"
+    "Add rectangle" -> "添加矩形"
+    "Add oval" -> "添加椭圆"
+    "Add line", "Add arrow" -> "添加线条"
+    "Add checkmark", "Add cross", "Add dot" -> "添加标记"
+    "Add file attachment" -> "添加附件"
+    "Add stamp" -> "添加印章"
+    "Delete comment" -> "删除批注"
+    "Edit comment" -> "修改批注"
+    "Move or Resize" -> "移动或缩放"
+    "Wrap Text" -> "图片文字环绕"
+    "Bold", "Italic", "Font Size" -> "修改文字格式"
+    "Enhance camera image" -> "增强扫描页面"
+    else -> "文档编辑"
+}

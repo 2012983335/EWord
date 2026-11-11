@@ -1,0 +1,126 @@
+Artefact (formerly ClearPDF)
+Copyright (c) 2026 Chethan616
+
+Artefact is a modified version of PdfCraft for Android
+(https://github.com/artcraft-android/pdfcraft-android) by the ArtCraft Team, which is built on the
+engine of PdfCraft (https://github.com/storytold/pdfcraft) by storytold and the PdfCraft
+contributors. Artefact changed the Android app (android/): its name, icon, signing and release
+workflow, and its user interface, rewritten on Artefact's liquid glass design system, and added the
+desk, notes, voice notes and Quick Preview. The engine crates (engine/crates, engine/vendor,
+engine/mobile) come from PdfCraft, laid out under engine/. Artefact's changes are under the same
+terms: MIT OR Apache-2.0, at your option.
+
+Word documents: the engine of WordCraft (https://github.com/storytold/wordcraft) by storytold and
+the WordCraft contributors, MIT OR Apache-2.0, pinned by commit (engine/Cargo.toml). Two of its
+crates are vendored with Artefact's patches (engine/vendor/wordcraft-engine: no font store and so no
+network code; engine/vendor/wordcraft-fonts: Android's font folders), keeping their licence files.
+Its bundled faces Source Sans 3 and Source Serif 4 (Adobe, SIL Open Font License 1.1) are in
+engine/assets/fonts with their licences.
+
+Presentations: the slide reader and renderer of DeckCraft (https://github.com/storytold/deckcraft)
+by storytold and the DeckCraft contributors, MIT OR Apache-2.0, pinned by commit; its fonts crate is
+vendored with Artefact's Android patch (engine/vendor/deckcraft-fonts). Its last-resort face is
+Ubuntu Light (Canonical Ltd. / Dalton Maag, Ubuntu Font Licence 1.0), from epaint_default_fonts.
+
+Workbooks: the engine of GridCraft (https://github.com/storytold/gridcraft) and pictures: the
+codecs, develop settings and CPU pipeline of LightCraft (https://github.com/storytold/lightcraft),
+both by storytold and their contributors, MIT OR Apache-2.0, pinned by commit (engine/Cargo.toml).
+
+Liquid glass: the backdrop library from AndroidLiquidGlass by Kyant0
+(https://github.com/Kyant0/AndroidLiquidGlass), Apache-2.0, adapted. The velocity squash-and-stretch
+of glass thumbs follows LiquidTracker from AndroidLiquidGlassView by Donny Yale
+(https://github.com/QmDeve/AndroidLiquidGlassView), MIT, re-implemented for Compose.
+
+Mascots: body outlines from bot-avatars by Jakub Antalik (Libraries.dev), MIT, drawn with an
+expressive face rig in Compose (android/app/src/main/java/com/chethan616/clearpdf/ui/mascot).
+
+Android UI typefaces: Plus Jakarta Sans (Copyright 2020 The Plus Jakarta Sans Project Authors),
+Bricolage Grotesque (Copyright 2022 The Bricolage Grotesque Project Authors), Fraunces (Copyright
+2018 The Fraunces Project Authors), DM Serif Display (Copyright 2014 Colophon Foundry) and Doto
+(Copyright 2024 The Doto Project Authors), each under the SIL Open Font License 1.1. Their license
+texts are in android/app/src/main/assets/licences/OFL-*.txt. The app's Licences screen credits the
+font projects and links to their sources.
+
+The original notice of PdfCraft for Android follows.
+
+----------------------------------------------------------------------------------------------------
+
+PdfCraft for Android
+Copyright (c) 2026 ArtCraft Team and the PdfCraft contributors.
+
+This repository holds the Android app and the parts of PdfCraft (https://github.com/storytold/pdfcraft)
+it builds: the engine crates, assets/ and the vendored crates the engine uses.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+- Lucide icons (engine/assets/icons/*.svg) — ISC License. See engine/assets/icons/LICENSE-lucide.txt.
+  The Android app turns them into Compose path data at build time.
+- Inter typeface (engine/assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See engine/assets/fonts/OFL-Inter.txt.
+- JetBrains Mono typeface (engine/assets/fonts/JetBrainsMono-*.ttf) — SIL Open Font License 1.1. See engine/assets/fonts/OFL-JetBrainsMono.txt.
+- Dancing Script typeface (engine/assets/fonts/DancingScript.ttf), Copyright 2016 The Dancing Script Project Authors — SIL Open Font License 1.1 (Reserved Font Name "Dancing Script"). See engine/assets/fonts/OFL-DancingScript.txt.
+- Fonts from craft-fonts (https://github.com/storytold/craft-fonts), an optional build input
+  (CRAFT_FONTS_DIR) that is not part of this repository. Builds made with it, which includes every
+  official release, embed the fonts listed in
+  https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (BIZ UDPGothic, Shippori Mincho,
+  BIZ UDMincho; the web build only BIZ UDPGothic Regular) under the SIL Open Font License 1.1. Those
+  packages carry each font's licence as OFL-<family>.txt. Builds made with the craft-fonts revision
+  pinned in .github/workflows/ also include Noto Sans Thai (in the web build too), Copyright 2022
+  The Noto Project Authors (https://github.com/notofonts/thai), under SIL OFL 1.1; its licence is
+  fonts/noto-sans-thai/OFL.txt in the craft-fonts build input.
+- hayro (rendering, via crates.io) — Apache-2.0 OR MIT. Its `embed-fonts` feature bundles the Foxit
+  standard-14 Type 1 fonts under BSD-3-Clause ("Copyright 2014 PDFium Authors"), and hayro-cmap bundles
+  Adobe CMap resources under BSD-3-Clause.
+- lopdf (bootstrap document inspection, via crates.io) — MIT.
+- Colour profiles in hayro-interpret — CGATS001Compat-v2-micro.icc (CC0-1.0, Clinton Ingram) and
+  LAB.icc (generated by the hayro authors with LittleCMS 2; MIT OR Apache-2.0).
+
+Android app (android/app):
+- UniFFI (https://github.com/mozilla/uniffi-rs) — MPL-2.0: the uniffi crate in the library, and the
+  generator of the Kotlin bindings (generated at build time, not committed).
+- JNA (https://github.com/java-native-access/jna) — Apache-2.0 (dual-licensed with LGPL-2.1; used
+  under Apache-2.0).
+- AndroidX, Jetpack Compose, ExifInterface and kotlinx.coroutines — Apache-2.0.
+- Ocrs text-recognition models (engine/assets/models, committed so the build downloads nothing) by
+  Robert Knight — CC-BY-SA-4.0. The app ships them unmodified with the license and attribution in
+  engine/assets/models/ATTRIBUTION.txt.
+
+Required notices:
+
+  Foxit standard-14 substitute fonts (engine/vendor/hayro-interpret/assets/*.pfb):
+    Copyright 2014 PDFium Authors. All rights reserved. Original code copyright 2014 Foxit Software Inc.
+    Redistributed under the BSD-3-Clause licence in engine/vendor/hayro-interpret/assets/LICENSE_FOXIT.
+
+  CMap resources (bundled by hayro-cmap; character-mapping data, not visual assets):
+    Copyright 1990-2023 Adobe. All rights reserved. Redistributed under the BSD-3-Clause licence
+    (https://github.com/adobe-type-tools/cmap-resources/blob/master/LICENSE.txt). Neither the name of
+    Adobe nor the names of its contributors are used to endorse or promote this product.
+
+Vendored (vendor/, patched; see vendor/README.md):
+- hayro 0.7.1 — Apache-2.0 OR MIT, Copyright the hayro authors (licence files kept in vendor/hayro).
+- hayro-interpret 0.7.0 — Apache-2.0 OR MIT, Copyright the hayro authors (LICENSE-APACHE, LICENSE-MIT kept in vendor/hayro-interpret).
+
+JianDoc image tools include PhotoEditor (Burhanuddin Rashid, MIT) and Android Image Cropper (CanHub, Apache-2.0). Their license texts are included in android/app/src/main/assets/licences/.
+
+EWord recent-file dragging uses Calvin-LL/Reorderable 3.1.0 (Apache-2.0).
+RecentOverscroll.kt adapts the AndroidX Compose Foundation OffsetOverscrollEffect sample,
+Copyright 2022 The Android Open Source Project (Apache-2.0), with increasing resistance.
+Source: https://github.com/androidx/androidx/blob/androidx-main/compose/foundation/foundation/samples/src/main/java/androidx/compose/foundation/samples/OverscrollSample.kt
+
+EWord 0.4.0 bundles Foxlet Translate v0.5.0 (MIT wrapper; Bergamot MPL-2.0;
+Marian MIT; other component licences remain applicable). The original NOTICE,
+SOURCE.txt and full third-party licences are preserved under
+android/app/src/main/assets/licences/foxlet/ and in the distributed AAR.
+Corresponding source, including the publisher's MPL-covered modifications:
+https://github.com/yinvoke/foxlet-translate/tree/v0.5.0
+EWord does not modify Foxlet's AAR or its covered native sources.
+
+Bundled Mozilla translation models (MPL-2.0): en -> zh-Hans 2.2 and
+zh-Hans -> en 2.1. File names, original publisher locations, sizes and SHA-256
+are recorded in android/app/src/main/assets/translation/registry.json.
+Model licence: android/app/src/main/assets/licences/MPL-translation-models.txt.
+Source and licence: https://github.com/mozilla/firefox-translations-models

@@ -1,0 +1,30 @@
+Add-Type -AssemblyName System.Drawing
+$fixtureDir = Join-Path $PSScriptRoot 'fixtures'
+$photo = [System.Drawing.Bitmap]::new(640, 280)
+$canvas = [System.Drawing.Graphics]::FromImage($photo)
+$paper = [System.Drawing.Drawing2D.LinearGradientBrush]::new([System.Drawing.Point]::new(0, 0), [System.Drawing.Point]::new(640, 0), [System.Drawing.Color]::FromArgb(155, 150, 140), [System.Drawing.Color]::FromArgb(245, 240, 228))
+$canvas.FillRectangle($paper, 0, 0, 640, 280)
+$photo.Save((Join-Path $fixtureDir 'blank-paper.jpg'), [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$canvas.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$pen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(25, 28, 32), 4)
+$canvas.DrawBezier($pen, 100, 190, 200, 50, 260, 220, 160, 210)
+$canvas.DrawBezier($pen, 160, 210, 130, 200, 350, 80, 310, 200)
+$canvas.DrawBezier($pen, 310, 200, 350, 80, 410, 250, 470, 120)
+$canvas.DrawBezier($pen, 120, 225, 260, 210, 390, 240, 525, 200)
+$photo.Save((Join-Path $fixtureDir 'signature-photo.jpg'), [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$pen.Dispose()
+$paper.Dispose()
+$canvas.Dispose()
+$photo.Dispose()
+
+$photo = [System.Drawing.Bitmap]::new(800, 600)
+$canvas = [System.Drawing.Graphics]::FromImage($photo)
+$canvas.Clear([System.Drawing.Color]::FromArgb(45, 65, 80))
+$quad = [System.Drawing.Point[]]@([System.Drawing.Point]::new(110, 65), [System.Drawing.Point]::new(710, 95), [System.Drawing.Point]::new(675, 535), [System.Drawing.Point]::new(85, 505))
+$canvas.FillPolygon([System.Drawing.Brushes]::White, $quad)
+$pen = [System.Drawing.Pen]::new([System.Drawing.Color]::Black, 3)
+for ($row = 0; $row -lt 12; $row++) { $canvas.DrawLine($pen, 160, (135 + $row * 25), 600, (155 + $row * 25)) }
+$photo.Save((Join-Path $fixtureDir 'document-on-desk.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+$pen.Dispose()
+$canvas.Dispose()
+$photo.Dispose()

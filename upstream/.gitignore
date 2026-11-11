@@ -1,0 +1,18 @@
+*~
+/engine/target
+/engine/target-*/
+/dist
+.DS_Store
+.claude/
+# the phone parity tracker stays on this computer, out of the repo
+/docs/parity-mobile.md
+# release signing (the Play upload key): never committed
+/key.properties
+*.jks
+*.keystore
+# local build logs
+/build-*.log
+
+# reference screenshots shared while working, never committed
+/t[0-9].png
+/artefact_demo/
