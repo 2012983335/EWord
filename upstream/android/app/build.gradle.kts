@@ -250,8 +250,11 @@ android {
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersion
+        testInstrumentationRunner = "com.chethan616.clearpdf.checks.SignatureRasterChecks"
         ndk { abiFilters.addAll(rustAbis) }
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir(File(repoDir.parentFile, "verification/fixtures"))
 
     signingConfigs {
         if (releaseKeystore != null) {

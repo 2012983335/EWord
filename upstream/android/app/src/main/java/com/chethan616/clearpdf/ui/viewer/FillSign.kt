@@ -79,15 +79,6 @@ enum class FillElement(val engineType: String, @StringRes val label: Int) {
     Initials("initials", R.string.fill_element_initials),
 }
 
-/** The saved signature and initials (PNG with transparency), kept in the app's private files. */
-class Signatures(dir: File) {
-    private val root = File(dir, "signatures").apply { mkdirs() }
-    val signature = File(root, "signature.png")
-    val initials = File(root, "initials.png")
-
-    fun fileFor(initials: Boolean) = if (initials) this.initials else signature
-}
-
 /** Fill & Sign's touch layer: a tap places the chosen element; text asks for its words first. */
 @Composable
 fun FillSignLayer(vm: AppViewModel, doc: OpenDocument) {
@@ -117,7 +108,7 @@ fun FillSignLayer(vm: AppViewModel, doc: OpenDocument) {
                     FillElement.Text -> vm.fillTextPrompt = TextPrompt(doc, at)
                     FillElement.Signature, FillElement.Initials -> {
                         val initials = element == FillElement.Initials
-                        if (vm.signatures.fileFor(initials).isFile) vm.placeFill(doc, element, at)
+                        if (vm.signatures.fileFor(initials).isFile) vm.signatureLibrary = SignatureLibraryRequest(doc, initials, at)
                         else vm.signaturePad = SignaturePad(initials, doc, at)
                     }
                     else -> vm.placeFill(doc, element, at)
@@ -155,14 +146,12 @@ fun SignPanel(vm: AppViewModel, doc: OpenDocument, onDismiss: () -> Unit) {
         Spacer(Modifier.height(7.dp))
         for (initials in listOf(false, true)) {
             val file = vm.signatures.fileFor(initials)
-            val placeHint = stringResource(if (initials) R.string.fill_tap_place_initials else R.string.fill_tap_place_signature)
             if (!initials) Unit else Spacer(Modifier.height(18.dp))
             SignBox(
                 onClick = {
                     if (file.isFile) {
-                        vm.fillElement = if (initials) FillElement.Initials else FillElement.Signature
                         onDismiss()
-                        vm.tell(placeHint)
+                        vm.signatureLibrary = SignatureLibraryRequest(doc, initials)
                     } else {
                         onDismiss()
                         vm.signaturePad = SignaturePad(initials, doc, null)
@@ -182,7 +171,7 @@ fun SignPanel(vm: AppViewModel, doc: OpenDocument, onDismiss: () -> Unit) {
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
-                    BarIcon(LucideIcons.Trash2, stringResource(if (initials) R.string.fill_clear_initials else R.string.fill_clear_signature), { file.delete(); vm.signaturesChanged++ }, size = 40.dp)
+                    BarIcon(LucideIcons.ChevronRight, "查看已保存签名", { onDismiss(); vm.signatureLibrary = SignatureLibraryRequest(doc, initials) }, size = 40.dp)
                 } else {
                     Text(stringResource(if (initials) R.string.fill_add_initials else R.string.fill_add_signature), color = pdfColors.text, fontSize = 16.sp, modifier = Modifier.weight(1f).padding(start = 22.dp))
                     Icon(LucideIcons.Plus, null, tint = pdfColors.icon, modifier = Modifier.padding(end = 9.dp).size(24.dp))

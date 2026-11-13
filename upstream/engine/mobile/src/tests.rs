@@ -196,6 +196,37 @@ fn image_signature_is_positioned_and_saved_in_word_and_pdf() {
 }
 
 #[test]
+fn rotated_signature_png_keeps_position_and_transparency_in_word_and_pdf() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../verification/fixtures");
+    let picture = fixtures.join("signature-transform90.png");
+    let session = MobileSession::new();
+    let word_path = scratch().join("rotated-signature.docx");
+    std::fs::copy(fixtures.join("chinese-notice.docx"), &word_path).unwrap();
+    let word = session.open(word_path.to_string_lossy().into_owned(), None).unwrap().id;
+    let before = session.render_page(word, 0, 1.0, None).unwrap();
+    session.word_command(word, "caret.docEnd".into(), "{}".into()).unwrap();
+    session.word_command(word, "insert.picture".into(), json!({"path":picture,"width":50}).to_string()).unwrap();
+    session.word_command(word, "arrange.wrap".into(), r#"{"wrap":"inFrontOfText"}"#.into()).unwrap();
+    session.word_command(word, "arrange.bounds".into(), r#"{"page":0,"x":180,"y":450,"width":50,"height":200}"#.into()).unwrap();
+    session.save_office(word, word_path.to_string_lossy().into_owned()).unwrap();
+    let word = session.open(word_path.to_string_lossy().into_owned(), None).unwrap().id;
+    let after = session.render_page(word, 0, 1.0, None).unwrap();
+    let pixel = |image: &RenderedImage, x: usize, y: usize| -> Vec<u8> {
+        image.rgba[(y * image.width as usize + x) * 4..(y * image.width as usize + x) * 4 + 3].to_vec()
+    };
+    for (x, y) in [(205, 550), (215, 580)] { assert!(pixel(&after, x, y).iter().all(|c| *c < 80)); }
+    for (a, b) in pixel(&before, 220, 490).iter().zip(pixel(&after, 220, 490)) { assert!(a.abs_diff(b) <= 3, "Word transparency changed"); }
+    let pdf_path = blank_pdf(1);
+    let pdf = session.open(pdf_path.clone(), None).unwrap().id;
+    session.execute("page_add_image".into(), json!({"doc":pdf,"page":1,"path":picture,"rect":[180,450,230,650]}).to_string()).unwrap();
+    session.execute("doc_save".into(), json!({"doc":pdf}).to_string()).unwrap();
+    let pdf = session.open(pdf_path, None).unwrap().id;
+    let rendered = session.render_page(pdf, 0, 1.0, None).unwrap();
+    for (x, y) in [(205, 550), (215, 580)] { assert!(pixel(&rendered, x, y).iter().all(|c| *c < 80)); }
+    assert!(pixel(&rendered, 220, 490).iter().all(|c| *c > 240), "PDF transparent notch must show the underlying page");
+}
+
+#[test]
 fn chinese_notice_edits_and_reopens() {
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../verification/fixtures");
     let s = MobileSession::new();

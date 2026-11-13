@@ -1346,6 +1346,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     /** A signature or initials being made. */
     var signaturePad by mutableStateOf<com.chethan616.clearpdf.ui.viewer.SignaturePad?>(null)
     var signatureMenu by mutableStateOf<OpenDocument?>(null)
+    var signatureLibrary by mutableStateOf<com.chethan616.clearpdf.ui.viewer.SignatureLibraryRequest?>(null)
     var signaturePlacement by mutableStateOf<com.chethan616.clearpdf.ui.viewer.SignaturePlacement?>(null)
     val signatureCameraShots = Channel<File>(Channel.BUFFERED)
 
@@ -1403,29 +1404,22 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         importedSignature = null
         viewModelScope.launch {
             try {
-                val target = if (save) signatures.fileFor(pad.initials) else File(getApplication<Application>().cacheDir, "sign-${System.nanoTime()}.png")
-                withContext(Dispatchers.IO) {
-                    synchronized(signatures) {
-                        val pending = File(target.parentFile, ".${target.name}-${System.nanoTime()}.pending")
-                        try {
-                            pending.outputStream().use { check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
-                            check(pending.renameTo(target)) { "无法保存签名" }
-                        } finally {
-                            pending.delete()
+                val target = withContext(Dispatchers.IO) {
+                    val write: (File) -> Unit = { pending ->
+                        pending.outputStream().use { output ->
+                            check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                            output.fd.sync()
                         }
                     }
+                    if (save) signatures.add(pad.initials, write)
+                    else File(getApplication<Application>().cacheDir, "sign-${System.nanoTime()}.png").also(write)
                 }
                 signaturesChanged++
                 fillElement = if (pad.initials) FillElement.Initials else FillElement.Signature
                 val doc = pad.doc
                 val at = pad.at
-                if (doc != null && at == null) {
-                    showSignaturePlacement(doc, target)
-                } else if (doc != null && at != null) {
-                    runTool(doc, "fill_sign_add", mapOf(
-                        "page" to at.page + 1, "type" to if (pad.initials) "initials" else "signature",
-                        "at" to listOf(at.x.toDouble(), at.y.toDouble()), "path" to target.absolutePath, "author" to author,
-                    ))
+                if (doc != null) {
+                    showSignaturePlacement(doc, target, at)
                 } else {
                     tell(text(if (pad.initials) R.string.msg_place_initials else R.string.msg_place_signature))
                 }

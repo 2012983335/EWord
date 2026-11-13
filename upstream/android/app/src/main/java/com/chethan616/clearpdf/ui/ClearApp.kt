@@ -232,6 +232,7 @@ private fun Shell(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: 
         },
     )
 
+    vm.signatureLibrary?.takeIf { it.doc === doc }?.let { com.chethan616.clearpdf.ui.viewer.SignatureLibrary(vm, it) }
     vm.signatureMenu?.takeIf { it === doc }?.let { com.chethan616.clearpdf.ui.viewer.PhotoSignatureMenu(vm, it) }
     if (doc == null) vm.fileSheet?.let { (r, recent) -> FileActionsSheet(vm, r, recent) { vm.fileSheet = null } }
     // the loader only for an open that takes a while: a quick one shouldn't flash a spinner first
