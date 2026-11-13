@@ -29,11 +29,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +68,10 @@ import com.chethan616.clearpdf.ui.SheetRow
 import com.chethan616.clearpdf.ui.SheetTitle
 import com.chethan616.clearpdf.ui.pdfColors
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What a tap places in Fill & Sign. */
 enum class FillElement(val engineType: String, @StringRes val label: Int) {
@@ -222,35 +228,69 @@ fun SignaturePadScreen(vm: AppViewModel, pad: SignaturePad, onPickImage: () -> U
     var save by remember { mutableStateOf(true) }
     val ink = Color(vm.toolPrefs.fillColor)
     val imported = vm.importedSignature
+    val edits = remember(imported) { SignatureEraseHistory() }
+    var editVersion by remember(imported) { mutableStateOf(0) }
+    val actions = remember(imported, editVersion) { edits.actions }
+    var eraser by remember(imported) { mutableStateOf(false) }
+    var eraserWidth by remember { mutableStateOf(28f) }
+    var erasing by remember { mutableStateOf(false) }
+    var finishing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val drawFirst = stringResource(if (pad.initials) R.string.fill_draw_initials_first else R.string.fill_draw_signature_first)
+    val emptyImage = stringResource(R.string.signature_erase_empty)
+    val editFailed = stringResource(R.string.signature_erase_failed)
     com.chethan616.clearpdf.ui.glass.AuroraScreen { Column(Modifier.fillMaxSize().safeTopPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            com.chethan616.clearpdf.ui.glass.GlassTextAction(stringResource(R.string.common_cancel), { vm.signaturePad = null; vm.importedSignature = null })
+            com.chethan616.clearpdf.ui.glass.GlassTextAction(stringResource(R.string.common_cancel), { vm.signaturePad = null; vm.importedSignature = null }, enabled = !finishing)
             Text(stringResource(if (pad.initials) R.string.fill_create_initials else R.string.fill_create_signature), color = c.text, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             com.chethan616.clearpdf.ui.glass.GlassTextAction(
                 stringResource(R.string.common_done),
                 {
-                    val bmp = imported ?: renderStrokes(strokes, size, ink)
-                    if (bmp == null) {
-                        vm.tell(drawFirst)
-                    } else {
-                        vm.finishSignature(pad, bmp, save)
+                    finishing = true
+                    scope.launch {
+                        try {
+                            val bmp = if (imported == null) renderStrokes(strokes, size, ink)
+                                else if (actions.isEmpty()) imported
+                                else withContext(Dispatchers.Default) { eraseSignature(imported, actions) }
+                            if (bmp == null) vm.tell(if (imported == null) drawFirst else emptyImage)
+                            else vm.finishSignature(pad, bmp, save)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            vm.tell(failure.message ?: editFailed)
+                        } finally { finishing = false }
                     }
                 },
+                enabled = !erasing && !finishing,
                 primary = true,
             )
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TabChip(stringResource(R.string.fill_tab_draw), imported == null) { vm.importedSignature = null }
-            TabChip(stringResource(R.string.fill_tab_image), imported != null) { onPickImage() }
-            TabChip("拍照", false) { vm.requestSignatureCamera(pad) }
+            TabChip(stringResource(R.string.fill_tab_draw), imported == null) { if (!finishing && !erasing) vm.importedSignature = null }
+            TabChip(stringResource(R.string.fill_tab_image), imported != null) { if (!finishing && !erasing) onPickImage() }
+            TabChip("拍照", false) { if (!finishing && !erasing) vm.requestSignatureCamera(pad) }
+        }
+        if (imported != null) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                TabChip(stringResource(R.string.signature_eraser), eraser) { if (!erasing && !finishing) eraser = !eraser }
+                TextButton(enabled = edits.canUndo && !erasing && !finishing, onClick = { edits.undo(); editVersion++ }) { Text(stringResource(R.string.common_undo)) }
+                TextButton(enabled = edits.canRedo && !erasing && !finishing, onClick = { edits.redo(); editVersion++ }) { Text(stringResource(R.string.common_redo)) }
+            }
+            if (eraser) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.signature_eraser_size), color = c.text)
+                Slider(eraserWidth, { eraserWidth = it }, enabled = !erasing && !finishing, valueRange = 8f..64f, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            }
+            Text(stringResource(R.string.signature_eraser_hint), color = c.text, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         }
         Box(
             Modifier.fillMaxWidth().weight(1f).padding(16.dp).clip(RoundedCornerShape(8.dp)).background(Color.White).border(1.dp, c.divider, RoundedCornerShape(8.dp))
                 .onSizeChanged { size = it },
         ) {
             if (imported != null) {
-                Image(imported.asImageBitmap(), null, modifier = Modifier.fillMaxSize().padding(16.dp))
+                Box(Modifier.fillMaxSize().padding(16.dp)) {
+                    SignatureEraser(imported, actions, eraserWidth, eraser && !finishing,
+                        onErasing = { erasing = it }, onErase = { edits.add(it); editVersion++ })
+                }
             } else {
                 Canvas(
                     Modifier.fillMaxSize().pointerInput(Unit) {
@@ -275,7 +315,10 @@ fun SignaturePadScreen(vm: AppViewModel, pad: SignaturePad, onPickImage: () -> U
                     Text(stringResource(if (pad.initials) R.string.fill_draw_initials_here else R.string.fill_draw_signature_here), color = Color(0xFF8A8A8A), modifier = Modifier.align(Alignment.Center))
                 }
             }
-            Text(stringResource(R.string.common_clear), color = c.accent, modifier = Modifier.align(Alignment.TopEnd).clickable { strokes.clear(); vm.importedSignature = null }.padding(12.dp))
+            Text(stringResource(R.string.common_clear), color = c.accent, modifier = Modifier.align(Alignment.TopEnd).clickable(enabled = !erasing && !finishing) {
+                if (imported != null) { edits.add(SignatureErase(emptyList(), 0f, clearAll = true)); editVersion++ }
+                else strokes.clear()
+            }.padding(12.dp))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.fill_save_to_device), color = c.text, fontSize = 15.sp, modifier = Modifier.weight(1f))

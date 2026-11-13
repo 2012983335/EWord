@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
     private fun cropSignature(uri: Uri) {
         cropPhotoSignature.launch(com.canhub.cropper.CropImageContractOptions(uri,
                 com.canhub.cropper.CropImageOptions(activityTitle = "裁剪签名", cropMenuCropButtonTitle = "确认签名", outputCompressFormat = android.graphics.Bitmap.CompressFormat.PNG,
+                    initialCropWindowPaddingRatio = 0.1f,
                     outputRequestWidth = 1600, outputRequestHeight = 1600,
                     outputRequestSizeOptions = com.canhub.cropper.CropImageView.RequestSizeOptions.RESIZE_INSIDE)))
     }

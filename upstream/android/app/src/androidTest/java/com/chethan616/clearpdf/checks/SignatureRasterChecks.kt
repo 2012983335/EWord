@@ -7,13 +7,15 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.os.Bundle
 import com.chethan616.clearpdf.engine.Engine
 import com.chethan616.clearpdf.core.RenderedImage
 import com.chethan616.clearpdf.ui.viewer.SignatureRaster
 import com.chethan616.clearpdf.ui.viewer.SignatureTransform
+import com.chethan616.clearpdf.ui.viewer.SignatureErase
+import com.chethan616.clearpdf.ui.viewer.SignatureEraseHistory
+import com.chethan616.clearpdf.ui.viewer.eraseSignature
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import java.io.File
 import java.util.zip.ZipFile
@@ -29,9 +31,31 @@ class SignatureRasterChecks : Instrumentation() {
             val source = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(source)
             canvas.drawRect(10f, 5f, 90f, 45f, Paint().apply { color = Color.BLACK })
-            canvas.drawRect(18f, 8f, 22f, 12f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) })
+            val history = SignatureEraseHistory()
+            history.add(SignatureErase(listOf(Offset(40f, 20f), Offset(60f, 20f)), 8f))
+            eraseSignature(source, history.actions)!!.let { cleaned ->
+                check(Color.alpha(cleaned.getPixel(50, 20)) == 0) { "Eraser did not clear alpha" }
+                check(Color.alpha(cleaned.getPixel(50, 35)) > 240) { "Eraser damaged other ink" }
+                check(Color.alpha(source.getPixel(50, 20)) > 240) { "Eraser changed source" }
+                cleaned.recycle()
+            }
+            history.undo()
+            eraseSignature(source, history.actions)!!.let { check(Color.alpha(it.getPixel(50, 20)) > 240); it.recycle() }
+            history.redo()
+            eraseSignature(source, history.actions)!!.let { check(Color.alpha(it.getPixel(50, 20)) == 0); it.recycle() }
+            history.add(SignatureErase(emptyList(), 0f, clearAll = true))
+            check(eraseSignature(source, history.actions) == null) { "Blank signatures must be rejected" }
+            history.undo()
+            history.add(SignatureErase(listOf(Offset(75f, 30f)), 10f))
+            eraseSignature(source, history.actions)!!.let { check(Color.alpha(it.getPixel(75, 30)) == 0); it.recycle() }
+            report.putInt("eraserChecks", 5)
             val sourceFile = File(dir, "source.png")
-            sourceFile.outputStream().use { check(source.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            // The erased alpha hole must survive PNG export, rotation and both document formats.
+            // Keep the transparent centre wider than one rendered page pixel; subpixel circular
+            // edges mix with surrounding ink when the document renderer downsamples the image.
+            val cleaned = eraseSignature(source, listOf(SignatureErase(listOf(Offset(20f, 10f)), 8f)))!!
+            sourceFile.outputStream().use { check(cleaned.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            cleaned.recycle()
             val rotated = File(dir, "rotation90.png")
             SignatureRaster.write(sourceFile, SignatureTransform(Rect(0f, 0f, 200f, 50f), 90f), rotated)
             BitmapFactory.decodeFile(rotated.path).let { image ->
@@ -80,7 +104,7 @@ class SignatureRasterChecks : Instrumentation() {
                 }) { "Transformed transparent signature not embedded in Word" }
             }
             report.putInt("wordChecks", 1)
-            report.putString("stream", "SIGNATURE_CHECKS_OK: raster, PDF and Word reopen passed\n")
+            report.putString("stream", "SIGNATURE_CHECKS_OK: eraser alpha/undo/redo, raster, PDF and Word reopen passed\n")
             finish(Activity.RESULT_OK, report)
         } catch (failure: Throwable) {
             report.putString("stream", failure.stackTraceToString())
@@ -92,6 +116,7 @@ class SignatureRasterChecks : Instrumentation() {
         fun rgb(pixels: RenderedImage, x: Int, y: Int) = (0..2).map { pixels.rgba[((y * pixels.width.toInt() + x) * 4) + it].toInt() and 255 }
         for ((x, y) in listOf(125 to 200, 135 to 230)) check(rgb(image, x, y).all { it < 80 }) { "Saved ink position mismatch" }
         val expected = before?.let { rgb(it, 140, 140) } ?: listOf(255, 255, 255)
-        check(rgb(image, 140, 140).zip(expected).all { (a, b) -> kotlin.math.abs(a - b) <= 3 }) { "Transparent notch not preserved" }
+        val actual = rgb(image, 140, 140)
+        check(actual.zip(expected).all { (a, b) -> kotlin.math.abs(a - b) <= 3 }) { "Transparent notch not preserved: expected=$expected actual=$actual" }
     }
 }

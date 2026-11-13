@@ -474,4 +474,9 @@
     <string name="viewer_copy_location">复制位置或访问地址</string>
     <string name="viewer_location_loading">正在读取位置…</string>
     <string name="viewer_access_uri">原文件访问地址（URI）</string>
+    <string name="signature_eraser">橡皮擦</string>
+    <string name="signature_eraser_size">橡皮大小</string>
+    <string name="signature_eraser_hint">开启橡皮擦后涂抹多余笔迹，每次擦除均可撤销或重做。</string>
+    <string name="signature_erase_empty">签名已被全部擦除，请撤销擦除或重新导入图片。</string>
+    <string name="signature_erase_failed">签名处理失败，请重试。</string>
 </resources>

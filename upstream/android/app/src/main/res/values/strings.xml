@@ -1531,4 +1531,9 @@
     <string name="viewer_copy_location">Copy location or address</string>
     <string name="viewer_location_loading">Loading location…</string>
     <string name="viewer_access_uri">Original access address (URI)</string>
+    <string name="signature_eraser">Eraser</string>
+    <string name="signature_eraser_size">Eraser size</string>
+    <string name="signature_eraser_hint">Enable the eraser and drag over unwanted ink. Each gesture can be undone or redone.</string>
+    <string name="signature_erase_empty">No visible signature remains. Undo erasing or import another image.</string>
+    <string name="signature_erase_failed">Could not prepare the signature. Please try again.</string>
 </resources>
