@@ -1,0 +1,72 @@
+name: Assemble uploaded APK parts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release tag
+        required: true
+      asset:
+        description: Final APK filename
+        required: true
+      parts:
+        description: Number of sequential parts (000 onwards)
+        required: true
+      sha256:
+        description: Expected SHA-256 of the signed APK
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag }}
+      ASSET: ${{ inputs.asset }}
+      PARTS: ${{ inputs.parts }}
+      SHA256: ${{ inputs.sha256 }}
+    steps:
+      - name: Validate draft and download parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$ASSET" =~ ^EWord-[0-9.]+-offline-arm64\.apk$ ]]
+          [[ "$PARTS" =~ ^[0-9]+$ && "$PARTS" -gt 0 && "$PARTS" -le 256 ]]
+          [[ "$SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == true ]]
+          gh release download "$TAG" --pattern "$ASSET.part*" --dir parts
+      - name: Reassemble and verify original APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          name, count = os.environ['ASSET'], int(os.environ['PARTS'])
+          paths = [Path('parts') / f'{name}.part{i:03}' for i in range(count)]
+          assert set(Path('parts').iterdir()) == set(paths), 'Missing or extra parts'
+          digest = hashlib.sha256()
+          with open(name, 'wb') as output:
+              for path in paths:
+                  with path.open('rb') as source:
+                      while block := source.read(1024 * 1024):
+                          digest.update(block)
+                          output.write(block)
+          assert digest.hexdigest() == os.environ['SHA256'], 'APK checksum mismatch'
+          print(f'Verified original APK: {digest.hexdigest()}')
+          PY
+          gh release upload "$TAG" "$ASSET" --clobber
+      - name: Remove temporary parts from draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ((i=0; i<PARTS; i++)); do
+            printf -v part '%s.part%03d' "$ASSET" "$i"
+            gh release delete-asset "$TAG" "$part" --yes
+          done
