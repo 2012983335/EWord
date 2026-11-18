@@ -29,4 +29,4 @@
     <string name="use_odf">Use ODF Format</string>
     <string name="ask_for_convert_odf">Confirm File Format</string>
     <string name="convert_odf_message">This document may contain formatting or content that cannot be saved in the currently selected file format \"Text\".</string>
-</resources>
+<string name="eword_preparing_preview">Preparing smooth reading cache… First opening may take a moment.</string><string name="eword_preview_failed">Unable to prepare reading preview. Please reopen the original file.</string></resources>

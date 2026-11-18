@@ -206,6 +206,38 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         }
     }
 
+    /** Multi-select adds references to Recent; a single selection still opens immediately. */
+    fun importDocuments(uris: List<Uri>) {
+        val picked = uris.distinct()
+        if (picked.isEmpty()) return
+        if (picked.size == 1) { open(picked.single()); return }
+        viewModelScope.launch {
+            opening = true
+            try {
+                val imported = withContext(Dispatchers.IO) {
+                    var count = 0
+                    for (uri in picked.asReversed()) {
+                        try {
+                            files.keepAccess(uri)
+                            getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { }
+                                ?: error("无法读取文件")
+                            val name = files.displayNameRaw(uri)
+                            val old = recents.list().firstOrNull { it.uri == uri.toString() }
+                            recents.touch(RecentFile(uri.toString(), name, System.currentTimeMillis(), old?.pages ?: 0,
+                                files.size(uri) ?: 0L, old?.lastPage ?: 0))
+                            count++
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* Report the number that could not be added below. */ }
+                    }
+                    count
+                }
+                refreshRecents()
+                homeTab = com.chethan616.clearpdf.ui.home.HomeTab.Home
+                tell(getApplication<Application>().getString(R.string.files_import_result, imported, picked.size - imported))
+            } finally { opening = false }
+        }
+    }
+
     /** Opening a document from Quick Preview: the desk stays hidden until the document covers it. */
     var expandingPreview by mutableStateOf(false)
 
@@ -230,7 +262,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         }
     }
 
-    private suspend fun openFile(eng: Engine, uri: Uri, file: File, password: String?) {
+    private suspend fun openFile(eng: Engine, uri: Uri, file: File, password: String?, previewName: String? = null) {
         try {
             document?.let { saveAndClose(eng, it) }
             if (withContext(Dispatchers.IO) { com.chethan616.clearpdf.engine.OfficeCompatibility.needsReader(file) }) {
@@ -242,18 +274,19 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
                     recents.touch(RecentFile(uri.toString(), file.name, System.currentTimeMillis(), previous?.pages ?: 0, file.length(), previous?.lastPage ?: 0))
                 }
                 refreshRecents()
-                officeCompatFiles.send(file)
+                officeCompatFiles.send(OfficeReadRequest(file, uri))
                 return
             }
             val info = eng.command { open(file.absolutePath, password) }
             val images = PageImages(eng, info.id, viewModelScope, imageBudget)
-            val source = uri.takeIf { it.scheme == "content" || it.scheme == "file" }
+            val source = if (previewName != null) null else uri.takeIf { it.scheme == "content" || it.scheme == "file" }
             val doc = OpenDocument(info.id, info, source, file, images, password, eng, viewModelScope)
+            doc.readingSource = uri
             doc.fromOtherApp = otherAppUri == uri
             val (recent, writable) = withContext(Dispatchers.IO) {
                 recents.list().firstOrNull { it.uri == uri.toString() } to (source == null || files.canWrite(source))
             }
-            doc.writable = writable
+            doc.writable = previewName == null && writable
             loadLinks(eng, doc)
             doc.controller.nightMode = savedNightMode
             if (savedPageMode != doc.viewer.mode) doc.viewer.switchMode(savedPageMode)
@@ -270,7 +303,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
             pendingPage = recent?.lastPage?.takeIf { it in 0 until info.pages.size }
             pendingSpot = recent?.takeIf { pendingPage != null && it.lastX >= 0f && it.lastY >= 0f }?.let { Triple(it.lastX, it.lastY, it.lastZoom) }
             withContext(Dispatchers.IO) {
-                recents.touch(RecentFile(uri.toString(), info.name, System.currentTimeMillis(), info.pages.size, file.length(), recent?.lastPage ?: 0))
+                recents.touch(RecentFile(uri.toString(), previewName ?: info.name, System.currentTimeMillis(), info.pages.size, if (previewName != null) files.size(uri) ?: file.length() else file.length(), recent?.lastPage ?: 0))
             }
             refreshRecents()
         } catch (e: MobileException.NeedsPassword) {
@@ -283,7 +316,40 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     }
 
     /** The page to show once the viewer has laid the document out (reopening where the reader left off). */
-    val officeCompatFiles = Channel<File>(Channel.BUFFERED)
+    data class OfficeReadRequest(val file: File, val uri: Uri?)
+    val officeCompatFiles = Channel<OfficeReadRequest>(Channel.BUFFERED)
+    var pendingOfficeRead: Pair<OfficeReadRequest, com.chethan616.clearpdf.engine.OfficeReadCache.Prepared>?
+        get() = saved.get<android.os.Bundle>("officeReadingRequest")?.let { state ->
+            val file = state.getString("file") ?: return@let null
+            val source = state.getString("source") ?: return@let null
+            val pdf = state.getString("pdf") ?: return@let null
+            OfficeReadRequest(File(file), state.getString("uri")?.let(Uri::parse)) to
+                com.chethan616.clearpdf.engine.OfficeReadCache.Prepared(File(source), File(pdf))
+        }
+        set(value) {
+            saved["officeReadingRequest"] = value?.let { (request, prepared) ->
+                android.os.Bundle().apply {
+                    putString("file", request.file.absolutePath)
+                    putString("uri", request.uri?.toString())
+                    putString("source", prepared.source.absolutePath)
+                    putString("pdf", prepared.pdf.absolutePath)
+                }
+            }
+        }
+
+    fun openOfficeReadCache(request: OfficeReadRequest, pdf: File) = viewModelScope.launch {
+        opening = true
+        try {
+            val eng = engine ?: application.engine.await().getOrThrow().also { engine = it }
+            val working = withContext(Dispatchers.IO) {
+                val folder = File(getApplication<Application>().cacheDir, "office-reading/${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+                File(folder, pdf.name).also { pdf.copyTo(it) }
+            }
+            openFile(eng, request.uri ?: Uri.fromFile(request.file), working, null, request.file.name)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { tell(failure.userMessage) }
+        finally { opening = false }
+    }
 
     var pendingPage: Int? = null
 
@@ -359,7 +425,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         withContext(Dispatchers.IO) {
             // in Reading Mode the page canvas has no layout: the page read is the pending one
             val page = pending ?: spot?.page ?: v.currentPage
-            doc.source?.let { src ->
+            doc.readingSource?.let { src ->
                 recents.update(src.toString()) {
                     it.copy(lastPage = page, reading = reading, lastX = spot?.x ?: -1f, lastY = spot?.y ?: -1f, lastZoom = if (spot != null) zoom else 1f)
                 }
@@ -395,7 +461,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
         val page = if (readingMode) pendingPage ?: v.currentPage else spot?.page ?: v.currentPage
         val zoom = v.zoom
         val reading = readingMode
-        viewModelScope.launch { withContext(Dispatchers.IO) { doc.source?.let { src -> recents.update(src.toString()) { it.copy(lastPage = page, reading = reading, lastX = spot?.x ?: -1f, lastY = spot?.y ?: -1f, lastZoom = zoom) } } } }
+        viewModelScope.launch { withContext(Dispatchers.IO) { doc.readingSource?.let { src -> recents.update(src.toString()) { it.copy(lastPage = page, reading = reading, lastX = spot?.x ?: -1f, lastY = spot?.y ?: -1f, lastZoom = zoom) } } } }
     }
 
     /** Checkpoint pending drawing without committing it or changing the drawing tool's Undo. */
@@ -3123,6 +3189,14 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     /** Adding a folder to On this device: the activity opens the system's folder picker. */
     val accessRequests = Channel<Unit>(Channel.CONFLATED)
 
+    var courseFoldersOpen by mutableStateOf(false)
+    var courseFolderStart by mutableStateOf<Uri?>(null)
+
+    fun showCourseFolders(tree: Uri? = null) {
+        courseFolderStart = tree
+        courseFoldersOpen = true
+    }
+
     fun requestFileAccess() {
         accessRequests.trySend(Unit)
     }
@@ -3137,6 +3211,7 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     fun addLocalFolder(tree: Uri) {
         com.chethan616.clearpdf.engine.LocalFiles.addFolder(getApplication(), tree)
         hasFileAccess = com.chethan616.clearpdf.engine.LocalFiles.hasAccess(getApplication())
+        showCourseFolders(tree)
         scanLocal(force = true)
     }
 

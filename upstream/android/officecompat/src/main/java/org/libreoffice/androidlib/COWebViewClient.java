@@ -35,6 +35,14 @@ public class COWebViewClient extends WebViewClient {
         mobileSocket = new MobileSocket();
     }
 
+    @Override
+    public void onPageFinished(WebView view, String url) {
+        super.onPageFinished(view, url);
+        if (url != null && url.startsWith("file:///android_asset/dist/cool.html?") && url.contains("&ewordReader=true")) {
+            view.evaluateJavascript("(function(){if(document.getElementById('eword-reader-style'))return;var s=document.createElement('link');s.id='eword-reader-style';s.rel='stylesheet';s.href='file:///android_asset/eword/reader.css';s.onload=function(){window.dispatchEvent(new Event('resize'));};document.head.appendChild(s);var p=document.querySelector('#toolbar-row>.ui-spacer');if(p){var t=document.createElement('div');t.id='eword-document-title';t.textContent=new URLSearchParams(location.search).get('ewordTitle')||'EWord';p.appendChild(t);}})();", null);
+        }
+    }
+
     public static WebResourceResponse response(int code, String reasonPhrase, InputStream data, Map<String, String> headers) {
         return new WebResourceResponse(
                 null,

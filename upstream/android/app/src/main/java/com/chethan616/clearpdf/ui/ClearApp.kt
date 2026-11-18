@@ -112,6 +112,7 @@ fun ClearApp(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () ->
 @Composable
 private fun Shell(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: () -> Unit) {
     val c = clear
+    var browseOptions by remember { mutableStateOf(false) }
     val doc = vm.document
     var toast by remember { mutableStateOf<Message?>(null) }
     val scope = rememberCoroutineScope()
@@ -179,12 +180,13 @@ private fun Shell(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: 
             Box(Modifier.fillMaxSize().then(underDoc).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
                 RouteHost(route) { r ->
                     when {
+                        vm.courseFoldersOpen -> com.chethan616.clearpdf.ui.desk.CourseFolders(vm)
                         r == "welcome" -> Onboarding(vm)
                         r == "settings" -> SettingsScreen(vm)
                         r.startsWith("note:") -> NoteEditor(vm, r.removePrefix("note:"))
-                        r == HomeTab.Files.name -> FilesScreen(vm, onBrowse)
+                        r == HomeTab.Files.name -> FilesScreen(vm) { browseOptions = true }
                         r == HomeTab.Tools.name -> ToolsScreen(vm)
-                        else -> JianHome(vm, onBrowse)
+                        else -> JianHome(vm) { browseOptions = true }
                     }
                 }
             }
@@ -245,6 +247,14 @@ private fun Shell(vm: AppViewModel, onBrowse: () -> Unit, onPickSignatureImage: 
         }
     }
     if (vm.opening && slowOpen) Spinner()
+    if (browseOptions) GlassDialog(onDismiss = { browseOptions = false }, title = stringResource(R.string.browse_documents),
+        dismiss = stringResource(R.string.common_cancel)) {
+        com.chethan616.clearpdf.ui.glass.GlassPill(onClick = { browseOptions = false; onBrowse() }) { Text(stringResource(R.string.browse_multiple_files)) }
+        Spacer(Modifier.height(12.dp))
+        com.chethan616.clearpdf.ui.glass.GlassPill(onClick = { browseOptions = false; vm.requestFileAccess() }) { Text(stringResource(R.string.home_add_folder)) }
+        Spacer(Modifier.height(12.dp))
+        com.chethan616.clearpdf.ui.glass.GlassPill(onClick = { browseOptions = false; vm.showCourseFolders() }) { Text(stringResource(R.string.course_folders)) }
+    }
     Dialogs(vm)
 }
 

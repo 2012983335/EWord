@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <activity android:name="org.libreoffice.androidlib.LOActivity" android:process=":officecompat" android:exported="false" android:theme="@style/OfficeCompatTheme" android:launchMode="singleTask" android:taskAffinity="${applicationId}.officecompat" android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|uiMode" />
+        <activity android:name="org.libreoffice.androidlib.LOActivity" android:process=":officecompat" android:exported="false" android:theme="@style/OfficeCompatTheme" android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|uiMode" />
         <activity android:name="org.libreoffice.androidlib.SlideShowActivity" android:process=":officecompat" android:exported="false" android:theme="@style/OfficeCompatTheme" android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|uiMode" />
         <provider android:name="org.libreoffice.androidlib.ClipboardFileProvider" android:authorities="${applicationId}.clipboard" android:exported="false" android:grantUriPermissions="true" />
     </application>

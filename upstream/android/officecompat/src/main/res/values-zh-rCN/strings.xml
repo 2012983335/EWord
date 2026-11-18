@@ -27,4 +27,4 @@
     <string name="all_files_access_grant">允许访问</string>
     <string name="do_not_ask_again">不再询问</string>
     <string name="failed_to_save_file">无法将修改保存到文件</string>
-</resources>
+<string name="eword_preparing_preview">正在准备流畅阅读缓存…首次打开需要处理</string><string name="eword_preview_failed">无法生成阅读缓存，请重新打开原文件。</string></resources>

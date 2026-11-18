@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation android:name="com.chethan616.clearpdf.checks.OfficeReadingChecks" android:targetPackage="cn.jiandoc.app.debug" />
+    <application>
+        <provider android:name="com.chethan616.clearpdf.checks.CourseDocumentsProvider" android:authorities="cn.jiandoc.app.debug.test.courses" android:exported="true" android:grantUriPermissions="true" />
+    </application>
+</manifest>

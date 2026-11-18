@@ -79,7 +79,21 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Browse: any PDF a document provider offers, opened with write access when it allows. */
-    private val pickPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::open) }
+    private val officePreview = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val pending = vm.pendingOfficeRead
+        vm.pendingOfficeRead = null
+        // The native renderer can exit before Android delivers its result Intent. The committed
+        // cache is authoritative; keep explicit Back cancellation distinct from process exit.
+        if (pending != null && result.data?.getBooleanExtra("eword.previewCancelled", false) != true &&
+            com.chethan616.clearpdf.engine.OfficeReadCache.valid(pending.second.pdf)) {
+            vm.openOfficeReadCache(pending.first, pending.second.pdf)
+        } else {
+            if (pending != null && result.data?.getBooleanExtra("eword.previewCancelled", false) != true)
+                vm.tell(result.data?.getStringExtra("eword.previewError") ?: getString(R.string.office_preview_interrupted))
+        }
+    }
+
+    private val pickPdf = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.importDocuments(uris) }
 
     private var pickKind = FilePickKind.Open
     private val pickMany = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.onFilesPicked(pickKind, uris) }
@@ -127,24 +141,41 @@ class MainActivity : ComponentActivity() {
     /** The view model's requests that need the activity: other apps, pickers, the camera, printing. */
     private fun collectRequests() {
         lifecycleScope.launch {
-            for (file in vm.officeCompatFiles) {
+            for (request in vm.officeCompatFiles) {
                 var copy: File? = null
                 try {
+                    if (vm.pendingOfficeRead != null) { vm.tell("讲义正在处理，请先完成或返回取消"); continue }
+                    val prepared = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.chethan616.clearpdf.engine.OfficeReadCache(File(cacheDir, "share/office-preview")).prepare(request.file)
+                    }
+                    if (com.chethan616.clearpdf.engine.OfficeReadCache.valid(prepared.pdf)) {
+                        vm.openOfficeReadCache(request, prepared.pdf)
+                        continue
+                    }
                     copy = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val folder = File(cacheDir, "share/officecompat/${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
-                        File(folder, file.name).also {
-                            try { file.copyTo(it) } catch (failure: Exception) { it.delete(); folder.delete(); throw failure }
+                        // A read-only reader may still be releasing its native engine after Back.
+                        val manager = getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                        val old = manager.runningAppProcesses.orEmpty().filter { it.processName == "$packageName:officecompat" }
+                        old.forEach { android.os.Process.killProcess(it.pid) }
+                        for (attempt in 0 until 20) {
+                            if (manager.runningAppProcesses.orEmpty().none { process -> old.any { it.pid == process.pid } }) break
+                            kotlinx.coroutines.delay(25)
                         }
+                        prepared.source
                     }
                     val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", copy)
-                    startActivity(Intent(Intent.ACTION_VIEW).setClassName(this@MainActivity, "org.libreoffice.androidlib.LOActivity")
-                        .setDataAndType(uri, DocumentTypes.mimeOf(file.name))
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                        .putExtra("eword.readOnly", true))
+                    vm.pendingOfficeRead = request to prepared
+                    officePreview.launch(Intent(Intent.ACTION_VIEW).setClassName(this@MainActivity, "org.libreoffice.androidlib.LOActivity")
+                        .setDataAndType(uri, DocumentTypes.mimeOf(request.file.name))
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        .putExtra("eword.readOnly", true)
+                        .putExtra("eword.fileName", request.file.name)
+                        .putExtra("eword.previewOutput", prepared.pdf.absolutePath))
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     copy?.delete()
                     throw cancelled
                 } catch (failure: Exception) {
+                    vm.pendingOfficeRead = null
                     copy?.delete()
                     vm.tell(failure.message ?: "无法打开兼容阅读器")
                 }

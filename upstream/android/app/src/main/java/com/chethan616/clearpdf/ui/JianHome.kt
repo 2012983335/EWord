@@ -109,6 +109,7 @@ fun JianHome(vm: AppViewModel, onBrowse: () -> Unit) {
                     GlassCircle(onClick = { homeMenu = true }, size = 40.dp, label = "文件与工具菜单") { GlassIcon(LucideIcons.Ellipsis, null) }
                     DropdownMenu(homeMenu, { homeMenu = false }) {
                         DropdownMenuItem(text = { Text("文件管理") }, onClick = { homeMenu = false; vm.homeTab = com.chethan616.clearpdf.ui.home.HomeTab.Files })
+                        DropdownMenuItem(text = { Text(androidx.compose.ui.res.stringResource(com.chethan616.clearpdf.R.string.course_folders)) }, onClick = { homeMenu = false; vm.showCourseFolders() })
                         DropdownMenuItem(text = { Text("文档工具") }, onClick = { homeMenu = false; vm.homeTab = com.chethan616.clearpdf.ui.home.HomeTab.Tools })
                         DropdownMenuItem(text = { Text("图片批量转 PDF") }, onClick = { homeMenu = false; vm.pickPhotosToPdf() })
                         DropdownMenuItem(text = { Text("回收站") }, onClick = { homeMenu = false; vm.toolScreen = ToolScreen.Vault(com.chethan616.clearpdf.engine.VaultKind.Trash) })

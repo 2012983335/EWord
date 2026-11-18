@@ -25,6 +25,31 @@ data class LocalPdf(val uri: Uri, val path: String?, val name: String, val folde
  * files through the document provider.
  */
 object LocalFiles {
+    data class FolderItem(val uri: Uri, val name: String, val directory: Boolean, val size: Long)
+
+    /** Only enumerate this directory: opening a course must not recursively parse every lecture. */
+    fun children(context: Context, tree: Uri, parentId: String): List<FolderItem> {
+        val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE)
+        val out = ArrayList<FolderItem>()
+        val seen = HashSet<String>()
+        context.contentResolver.query(uri, columns, null, null, null)?.use { cursor ->
+            var count = 0
+            while (cursor.moveToNext()) {
+                check(++count <= MAX_ENTRIES) { context.getString(R.string.folder_too_large) }
+                val id = cursor.getString(0) ?: continue
+                val name = cursor.getString(1) ?: continue
+                val mime = cursor.getString(2)
+                val directory = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                if (!seen.add(id) || (!directory && !DocumentTypes.isOpenable(mime, name))) continue
+                out.add(FolderItem(DocumentsContract.buildDocumentUriUsingTree(tree, id), name, directory,
+                    if (cursor.isNull(3)) 0L else cursor.getLong(3)))
+            }
+        } ?: error(context.getString(R.string.folder_unreadable))
+        return out.sortedWith(compareBy<FolderItem> { !it.directory }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
+
     /** At most this many entries are looked at in all, and folders this deep, so a huge tree can't stall the list. */
     private const val MAX_ENTRIES = 20_000
     private const val MAX_DEPTH = 8

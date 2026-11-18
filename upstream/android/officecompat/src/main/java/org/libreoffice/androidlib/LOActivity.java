@@ -162,6 +162,7 @@ public class LOActivity extends AppCompatActivity {
     private ClipData clipData;
     private Thread nativeMsgThread;
     private Handler nativeHandler;
+    private boolean previewExportStarted;
     private Looper nativeLooper;
     private Bundle savedInstanceState;
 
@@ -364,6 +365,13 @@ public class LOActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (getIntent().getBooleanExtra("eword.readOnly", false)) {
+            int background = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                    ? android.graphics.Color.rgb(17, 29, 48) : android.graphics.Color.rgb(219, 228, 239);
+            getWindow().getDecorView().setBackgroundColor(background);
+            getWindow().setStatusBarColor(background);
+            getWindow().setNavigationBarColor(background);
+        }
         this.savedInstanceState = savedInstanceState;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         sPrefs = getSharedPreferences("eword-officecompat", MODE_PRIVATE);
@@ -379,8 +387,13 @@ public class LOActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
+                if (getIntent().hasExtra("eword.previewOutput")) {
+                    setResult(RESULT_CANCELED, new Intent().putExtra("eword.previewCancelled", true));
+                    finish();
+                    return;
+                }
                 if (!documentLoaded) {
-                    finishAndRemoveTask();
+                    finishReaderScreen();
                     return;
                 }
 
@@ -458,6 +471,7 @@ public class LOActivity extends AppCompatActivity {
 
     /** Actual initialization of the UI. */
     private void initUI() {
+        if (getIntent().getBooleanExtra("eword.readOnly", false) && (isFinishing() || isDestroyed())) return;
         isDocDebuggable = sPrefs.getBoolean(KEY_ENABLE_SHOW_DEBUG_INFO, false) && BuildConfig.DEBUG;
         mResolvedFile = null;
 
@@ -913,7 +927,7 @@ public class LOActivity extends AppCompatActivity {
                     loadDocument();
                 } else {
                     Toast.makeText(this, getString(R.string.storage_permission_required), Toast.LENGTH_SHORT).show();
-                    finishAndRemoveTask();
+                    finishReaderScreen();
                     break;
                 }
                 break;
@@ -1119,7 +1133,7 @@ public class LOActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         // A Save similar to an autosave
-        if (documentLoaded)
+        if (documentLoaded && !getIntent().getBooleanExtra("eword.readOnly", false))
             postMobileMessageNative("save dontTerminateEdit=1 dontSaveIfUnmodified=1");
 
         super.onPause();
@@ -1131,6 +1145,8 @@ public class LOActivity extends AppCompatActivity {
         stopWatchingForHardwareKeyboard();
 
         if (!documentLoaded) {
+            if (getIntent().getBooleanExtra("eword.readOnly", false) && isFinishing())
+                getMainHandler().postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 150);
             super.onDestroy();
             return;
         }
@@ -1148,7 +1164,13 @@ public class LOActivity extends AppCompatActivity {
         // finishWithProgress(), but it is actually better to send it twice
         // than never, so let's call it from here too anyway
         documentLoaded = false;
-        postMobileMessageNative("BYE");
+        if (getIntent().getBooleanExtra("eword.readOnly", false)) {
+            new Thread(() -> postMobileMessageNative("BYE"), "office-reader-close").start();
+            // Never leave an idle native reader behind if graceful shutdown stalls.
+            getMainHandler().postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 1000);
+        } else {
+            postMobileMessageNative("BYE");
+        }
 
         mProgressDialog.dismiss();
 
@@ -1353,7 +1375,16 @@ public class LOActivity extends AppCompatActivity {
     }
 
     /** Show the Saving progress and finish the app. */
+    private void finishReaderScreen() {
+        if (getIntent().getBooleanExtra("eword.readOnly", false)) finish();
+        else finishAndRemoveTask();
+    }
+
     private void finishWithProgress() {
+        if (getIntent().getBooleanExtra("eword.readOnly", false)) {
+            runOnUiThread(this::finish);
+            return;
+        }
         if (!documentLoaded) {
             finishAndRemoveTask();
             return;
@@ -1397,6 +1428,9 @@ public class LOActivity extends AppCompatActivity {
         Log.i(TAG, "Loading with language:  " + language);
 
         finalUrlToLoad += "&lang=" + language;
+        if (getIntent().getBooleanExtra("eword.readOnly", false)) {
+            finalUrlToLoad += "&ewordReader=true&ewordTitle=" + Uri.encode(getIntent().getStringExtra("eword.fileName") == null ? "EWord" : getIntent().getStringExtra("eword.fileName"));
+        }
 
         if (isDocEditable) {
             finalUrlToLoad += "&permission=edit";
@@ -1705,6 +1739,10 @@ public class LOActivity extends AppCompatActivity {
                 return false;
             }
             case "hideProgressbar": {
+                if (getIntent().hasExtra("eword.previewOutput")) {
+                    exportReadingPreview();
+                    return false;
+                }
                 if (mProgressDialog != null)
                     mProgressDialog.dismiss();
                 runOnUiThread(new Runnable() {
@@ -1726,6 +1764,53 @@ public class LOActivity extends AppCompatActivity {
             }
         }
         return true;
+    }
+
+    /** Prepare an immutable PDF once, then return to the app's native reader. */
+    private void exportReadingPreview() {
+        if (previewExportStarted) return;
+        previewExportStarted = true;
+        runOnUiThread(() -> mProgressDialog.indeterminate(R.string.eword_preparing_preview));
+        nativeHandler.post(() -> {
+            File pending = null;
+            try {
+                File output = new File(getIntent().getStringExtra("eword.previewOutput")).getCanonicalFile();
+                File root = new File(getCacheDir(), "share/office-preview").getCanonicalFile();
+                if (!output.getPath().startsWith(root.getPath() + File.separator))
+                    throw new java.io.IOException("Invalid preview location");
+                pending = new File(output.getParentFile(), "export.pending.pdf");
+                saveAs(pending.toURI().toString(), "pdf",
+                    "{\"ExportHiddenSlides\":{\"type\":\"boolean\",\"value\":\"true\"},\"ReduceImageResolution\":{\"type\":\"boolean\",\"value\":\"false\"}}");
+                try (java.io.RandomAccessFile pdf = new java.io.RandomAccessFile(pending, "rw")) {
+                    byte[] header = new byte[5];
+                    pdf.readFully(header);
+                    if (!new String(header, java.nio.charset.StandardCharsets.US_ASCII).equals("%PDF-"))
+                        throw new java.io.IOException("PDF export failed");
+                    pdf.seek(Math.max(0, pdf.length() - 1024));
+                    byte[] tail = new byte[(int)(pdf.length() - pdf.getFilePointer())];
+                    pdf.readFully(tail);
+                    if (!new String(tail, java.nio.charset.StandardCharsets.ISO_8859_1).contains("%%EOF"))
+                        throw new java.io.IOException("Incomplete PDF export");
+                    pdf.getFD().sync();
+                }
+                if (isFinishing() || isDestroyed()) return;
+                java.nio.file.Files.move(pending.toPath(), output.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    setResult(RESULT_OK, new Intent().putExtra("eword.preview", output.getAbsolutePath()));
+                    finish();
+                });
+            } catch (Exception failure) {
+                Log.e(TAG, "Reading preview export failed", failure);
+                runOnUiThread(() -> {
+                    setResult(RESULT_CANCELED, new Intent().putExtra("eword.previewError", getString(R.string.eword_preview_failed)));
+                    finish();
+                });
+            } finally {
+                if (pending != null) pending.delete();
+            }
+        });
     }
 
     public static void createNewFileInputDialog(Activity activity, final String defaultFileName, final @Nullable String mimeType, final int requestCode) {

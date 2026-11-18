@@ -93,7 +93,7 @@ fun MoreSheet(vm: AppViewModel, doc: OpenDocument, anchor: Rect) {
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.viewer_save_as_file), LucideIcons.SaveAs) { vm.saveCopyAs(doc) })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.viewer_details), LucideIcons.Info) { ctl.sheet = ViewerSheet.Details })
         if (doc.isOffice) add(com.chethan616.clearpdf.ui.glass.GlassMenuItem(stringResource(R.string.office_compat_saved), LucideIcons.BookOpenText) {
-            vm.officeCompatFiles.trySend(doc.file)
+            vm.officeCompatFiles.trySend(AppViewModel.OfficeReadRequest(doc.file, doc.source))
         })
         if (doc.isSlides) add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("编辑当前页文字", LucideIcons.FilePenLine) { vm.startSlideTextEdit(doc) })
         add(com.chethan616.clearpdf.ui.glass.GlassMenuItem("文档内搜索", LucideIcons.Search) { doc.selection.clear(); ctl.searching = true; ctl.sheet = ViewerSheet.None })
@@ -140,12 +140,12 @@ fun DocumentDetailsSheet(vm: AppViewModel, doc: OpenDocument) {
     var location by remember(doc.id) { mutableStateOf<String?>(null) }
     var queryFailed by remember(doc.id) { mutableStateOf(false) }
     var queried by remember(doc.id) { mutableStateOf(false) }
-    val address = (doc.source ?: android.net.Uri.fromFile(doc.file)).toString()
+    val address = (doc.readingSource ?: android.net.Uri.fromFile(doc.file)).toString()
     LaunchedEffect(doc.id) {
         try {
             location = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                doc.source?.let(vm.files::actualPath)
-                    ?: if (doc.source == null) doc.file.absolutePath else null
+                doc.readingSource?.let(vm.files::actualPath)
+                    ?: if (doc.readingSource == null) doc.file.absolutePath else null
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { queryFailed = true }
@@ -159,12 +159,12 @@ fun DocumentDetailsSheet(vm: AppViewModel, doc: OpenDocument) {
                     Text(doc.name, style = ClearType.BodyStrong, color = clear.ink)
                     Text(stringResource(R.string.viewer_storage_location), style = ClearType.Label, color = clear.inkSoft)
                     Text(location ?: stringResource(if (queryFailed || queried) R.string.viewer_location_unavailable else R.string.viewer_location_loading), color = clear.ink)
-                    if (doc.source == null) Text(stringResource(R.string.viewer_location_private), color = clear.inkSoft)
+                    if (doc.readingSource == null) Text(stringResource(R.string.viewer_location_private), color = clear.inkSoft)
                     Text(stringResource(R.string.viewer_access_uri), style = ClearType.Label, color = clear.inkSoft)
                     Text(address, style = ClearType.Body, color = clear.ink)
                 }
             }
-            if (doc.source?.scheme == "content") Text(stringResource(R.string.viewer_location_provider_note), style = ClearType.Caption, color = clear.inkSoft)
+            if (doc.readingSource?.scheme == "content") Text(stringResource(R.string.viewer_location_provider_note), style = ClearType.Caption, color = clear.inkSoft)
             com.chethan616.clearpdf.ui.glass.GlassPill(onClick = { vm.copyText(location ?: address) }) { Text(stringResource(R.string.viewer_copy_location)) }
         }
     }

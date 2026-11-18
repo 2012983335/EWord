@@ -52,6 +52,8 @@ class OpenDocument(
 
     /** Whether saving can write back to [source] (else changes need Save a copy). */
     var writable by mutableStateOf(true)
+    /** Reading history may belong to the original Office file; it is never a write destination. */
+    var readingSource: Uri? = source
 
     /** Changes saved into [file] that [source] doesn't have (it couldn't be written): closing offers a copy. */
     var notWrittenBack = false

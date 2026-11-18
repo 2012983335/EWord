@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browse_documents">打开文档</string>
+    <string name="browse_multiple_files">选择文件（支持多选）</string>
+    <string name="course_folders">讲义文件夹</string>
+    <string name="files_import_result">已添加 %1$d 个文件到最近使用，%2$d 个文件无法读取。</string>
+    <string name="folder_loading">正在读取文件夹…</string>
+    <string name="folder_retry">重试</string>
+    <string name="folder_unreadable">无法读取此文件夹，请重新选择并授予访问权限。</string>
+    <string name="folder_too_large">当前文件夹包含超过 20,000 个项目，请选择更小的子文件夹。</string>
+    <string name="folder_roots_empty">添加讲义文件夹后，可以逐层浏览其中的文档和子文件夹。</string>
+    <string name="folder_documents_empty">此文件夹没有支持的文档或子文件夹。</string>
+    <string name="office_preview_interrupted">讲义准备过程被中断，请重新打开文件重试。</string>
+</resources>

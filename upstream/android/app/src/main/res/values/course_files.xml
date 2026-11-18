@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browse_documents">Open documents</string>
+    <string name="browse_multiple_files">Select files (multiple allowed)</string>
+    <string name="course_folders">Course folders</string>
+    <string name="files_import_result">Added %1$d files to Recent; %2$d could not be read.</string>
+    <string name="folder_loading">Reading folder…</string>
+    <string name="folder_retry">Retry</string>
+    <string name="folder_unreadable">Cannot read this folder. Please select it again to grant access.</string>
+    <string name="folder_too_large">This folder contains over 20,000 entries. Please select a smaller subfolder.</string>
+    <string name="folder_roots_empty">Add a course folder to browse its documents and subfolders.</string>
+    <string name="folder_documents_empty">No supported documents or subfolders in this folder.</string>
+    <string name="office_preview_interrupted">Lecture preparation was interrupted. Please reopen the file to try again.</string>
+</resources>
