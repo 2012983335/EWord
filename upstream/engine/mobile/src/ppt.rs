@@ -34,6 +34,7 @@ struct Outline {
     /// The slide size in master units (576 to the inch).
     size: Option<(i32, i32)>,
     slides: Vec<SlideText>,
+    persist_ids: Vec<u32>,
 }
 
 /// One record's header: its type, whether it holds other records, and its body.
@@ -68,7 +69,10 @@ fn read_slide_list(body: &[u8], out: &mut Outline, budget: &mut usize) {
         }
         *budget -= 1;
         match r.kind {
-            SLIDE_PERSIST_ATOM => out.slides.push(SlideText::default()),
+            SLIDE_PERSIST_ATOM => {
+                out.slides.push(SlideText::default());
+                out.persist_ids.push(r.body.get(..4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap())));
+            }
             TEXT_HEADER_ATOM => kind = r.body.get(..4).map_or(1, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
             TEXT_CHARS_ATOM | TEXT_BYTES_ATOM => {
                 let text = if r.kind == TEXT_CHARS_ATOM {
@@ -129,7 +133,51 @@ fn outline(bytes: &[u8]) -> Result<Outline, String> {
     let mut out = Outline::default();
     let mut budget = MAX_RECORDS;
     walk(&data, 0, &mut out, &mut budget);
+    // Text boxes can live in the slide's drawing, outside SlideListWithText.
+    // Resolve persist ids rather than assuming physical record order is slide order.
+    let mut offsets = std::collections::BTreeMap::new();
+    for r in records(&data).filter(|r| matches!(r.kind, 0x1771 | 0x1772)) {
+        let mut at = 0usize;
+        while let Some(header) = r.body.get(at..at + 4) {
+            if budget == 0 { break; }
+            let entry = u32::from_le_bytes(header.try_into().unwrap());
+            let count = (entry >> 20) as usize;
+            at += 4;
+            if count == 0 || at + count * 4 > r.body.len() { break; }
+            for i in 0..count {
+                if budget == 0 { break; }
+                budget -= 1;
+                let pos = at + i * 4;
+                offsets.insert((entry & 0xFFFFF) + i as u32, u32::from_le_bytes(r.body[pos..pos + 4].try_into().unwrap()) as usize);
+            }
+            at += count * 4;
+        }
+    }
+    for (slide, id) in out.slides.iter_mut().zip(&out.persist_ids) {
+        let Some(offset) = offsets.get(id) else { continue };
+        let Some(record) = data.get(*offset..).and_then(|b| records(b).next()).filter(|r| r.kind == 0x03EE) else { continue };
+        drawing_text(record.body, 0, slide, &mut budget);
+    }
     Ok(out)
+}
+
+fn drawing_text(data: &[u8], depth: usize, slide: &mut SlideText, budget: &mut usize) {
+    if depth > MAX_DEPTH { return; }
+    for r in records(data) {
+        if *budget == 0 { return; }
+        *budget -= 1;
+        if r.kind == 0xF00D { // OfficeArtClientTextbox has atom ver, but contains text records.
+            let mut text = Outline::default();
+            text.slides.push(SlideText::default());
+            read_slide_list(r.body, &mut text, budget);
+            let extra = text.slides.remove(0);
+            if !extra.title.is_empty() {
+                if slide.title.is_empty() { slide.title = extra.title; }
+                else { slide.body.push(extra.title); }
+            }
+            slide.body.extend(extra.body);
+        } else if r.container { drawing_text(r.body, depth + 1, slide, budget); }
+    }
 }
 
 /// A DeckCraft presentation holding the slides' text of the .ppt file `bytes`.
@@ -163,6 +211,35 @@ pub(crate) fn import(bytes: &[u8]) -> Result<Presentation, String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires a local user-supplied file"]
+    fn inspect_local_presentation() {
+        let bytes = std::fs::read(std::env::var("EWORD_PPT_SAMPLE").unwrap()).unwrap();
+        let o = outline(&bytes).unwrap();
+        eprintln!("size={:?} slides={}", o.size, o.slides.len());
+        for (i, s) in o.slides.iter().enumerate() { eprintln!("page {} title_chars={} body_chars={}", i + 1, s.title.chars().count(), s.body.iter().map(|t| t.chars().count()).sum::<usize>()); }
+        let path = std::env::var("EWORD_PPT_SAMPLE").unwrap();
+        let session = crate::MobileSession::new();
+        let info = session.open(path, None).unwrap();
+        let mut visible = 0;
+        for (i, slide) in o.slides.iter().enumerate() {
+            if slide.title.is_empty() && slide.body.iter().all(String::is_empty) { continue; }
+            let image = session.render_page(info.id, i as u32, 0.5, None).unwrap();
+            assert!(image.rgba.chunks_exact(4).filter(|p| p[0] < 160 && p[1] < 160 && p[2] < 160).count() > 50, "page {} rendered blank", i + 1);
+            visible += 1;
+        }
+        assert!(visible > 0);
+        eprintln!("verified visible text pages={visible}");
+        let mut cfb = cfb::CompoundFile::open(std::io::Cursor::new(&bytes)).unwrap();
+        for path in ["Pictures", "PowerPoint Document"] {
+            let mut data = Vec::new();
+            if let Ok(mut stream) = cfb.open_stream(path) { stream.read_to_end(&mut data).unwrap(); }
+            let mut counts = std::collections::BTreeMap::new();
+            for r in records(&data) { *counts.entry(format!("{:04x}", r.kind)).or_insert(0usize) += 1; }
+            eprintln!("{path} {} bytes records={counts:?}", data.len());
+        }
+    }
 
     fn record(kind: u16, instance: u16, container: bool, body: &[u8]) -> Vec<u8> {
         let ver = if container { 0xF } else { 0 };
@@ -202,6 +279,30 @@ pub(crate) mod tests {
             s.write_all(&stream).unwrap();
         }
         cfb.into_inner().into_inner()
+    }
+
+    #[test]
+    fn reads_drawing_text_in_persist_order() {
+        let textbox = |text: &str| {
+            let mut body = record(TEXT_HEADER_ATOM, 0, false, &1u32.to_le_bytes());
+            body.extend(record(TEXT_CHARS_ATOM, 0, false, &text.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>()));
+            record(0x03EE, 0, true, &record(0xF004, 0, true, &record(0xF00D, 0, false, &body)))
+        };
+        let mut list = record(SLIDE_PERSIST_ATOM, 0, false, &1u32.to_le_bytes());
+        list.extend(record(SLIDE_PERSIST_ATOM, 0, false, &2u32.to_le_bytes()));
+        let mut stream = record(0x03E8, 0, true, &record(SLIDE_LIST_WITH_TEXT, 0, true, &list));
+        let second_offset = stream.len() as u32;
+        stream.extend(textbox("第二页：静水压强"));
+        let first_offset = stream.len() as u32;
+        stream.extend(textbox("第一页：液体性质"));
+        let mut directory = ((2u32 << 20) | 1).to_le_bytes().to_vec();
+        directory.extend(first_offset.to_le_bytes()); directory.extend(second_offset.to_le_bytes());
+        stream.extend(record(0x1772, 0, false, &directory));
+        let mut compound = cfb::CompoundFile::create(std::io::Cursor::new(Vec::new())).unwrap();
+        { use std::io::Write; compound.create_stream("PowerPoint Document").unwrap().write_all(&stream).unwrap(); }
+        let out = outline(&compound.into_inner().into_inner()).unwrap();
+        assert_eq!(out.slides[0].body, ["第一页：液体性质"]);
+        assert_eq!(out.slides[1].body, ["第二页：静水压强"]);
     }
 
     #[test]

@@ -9,6 +9,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.os.Bundle
 import com.chethan616.clearpdf.engine.Engine
+import com.chethan616.clearpdf.engine.OfflineTranslation
+import kotlinx.coroutines.runBlocking
 import com.chethan616.clearpdf.core.RenderedImage
 import com.chethan616.clearpdf.ui.viewer.SignatureRaster
 import com.chethan616.clearpdf.ui.viewer.SignatureTransform
@@ -104,7 +106,15 @@ class SignatureRasterChecks : Instrumentation() {
                 }) { "Transformed transparent signature not embedded in Word" }
             }
             report.putInt("wordChecks", 1)
-            report.putString("stream", "SIGNATURE_CHECKS_OK: eraser alpha/undo/redo, raster, PDF and Word reopen passed\n")
+            val translator = OfflineTranslation(targetContext)
+            runBlocking {
+                val chinese = translator.translate("Hello world.", true)
+                check(chinese.any { it in '\u4e00'..'\u9fff' }) { "English to Chinese native translation failed" }
+                val english = translator.translate("早上好。", false)
+                check(english.any { it in 'A'..'Z' || it in 'a'..'z' }) { "Chinese to English native translation failed" }
+            }
+            report.putInt("translationChecks", 2)
+            report.putString("stream", "SIGNATURE_CHECKS_OK: eraser, PDF/Word reopen and both offline translation directions passed\n")
             finish(Activity.RESULT_OK, report)
         } catch (failure: Throwable) {
             report.putString("stream", failure.stackTraceToString())

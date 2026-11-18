@@ -28,6 +28,9 @@ object DocumentTypes {
         "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
         // PowerPoint 97-2003: its slides' text (Artefact's own reader)
         "application/vnd.ms-powerpoint",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.oasis.opendocument.presentation-template",
+        "application/vnd.oasis.opendocument.presentation-flat-xml",
     )
 
     /** Workbooks and tables. */
@@ -50,7 +53,7 @@ object DocumentTypes {
     val OPENABLE = arrayOf(PDF, "image/jpeg", "image/png") + WORD + SLIDES + SHEETS + TEXT
 
     private val WORD_EXTENSIONS = setOf("docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "ott", "rtf")
-    private val SLIDE_EXTENSIONS = setOf("pptx", "pptm", "ppsx", "ppsm", "potx", "potm", "ppt", "pps", "pot")
+    private val SLIDE_EXTENSIONS = setOf("pptx", "pptm", "ppsx", "ppsm", "potx", "potm", "ppt", "pps", "pot", "odp", "otp", "fodp")
     private val SHEET_EXTENSIONS = setOf("xlsx", "xlsm", "xltx", "xltm", "xlsb", "xls", "xlt", "ods", "csv", "tsv")
     private val TEXT_EXTENSIONS = setOf("txt", "md", "markdown")
 
@@ -92,6 +95,9 @@ object DocumentTypes {
 
     /** The type to hand another app a file named [name] as. */
     fun mimeOf(name: String): String = when (extension(name)) {
+        "odp" -> "application/vnd.oasis.opendocument.presentation"
+        "otp" -> "application/vnd.oasis.opendocument.presentation-template"
+        "fodp" -> "application/vnd.oasis.opendocument.presentation-flat-xml"
         "docx" -> WORD[0]
         "dotx" -> WORD[1]
         "docm" -> WORD[2]

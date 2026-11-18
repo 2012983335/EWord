@@ -18,9 +18,20 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        exclusiveContent {
+            forRepository {
+                ivy {
+                    url = uri("https://storage.googleapis.com/r8-releases")
+                    patternLayout { artifact("/raw/[revision]/[module].[ext]") }
+                    metadataSources { artifact() }
+                }
+            }
+            filter { includeGroup("r8") }
+        }
     }
 }
 
 rootProject.name = "Artefact"
 include(":app")
 include(":backdrop")
+include(":officecompat")

@@ -1,0 +1,32 @@
+plugins { id 'com.android.library' }
+android {
+    namespace 'org.libreoffice.androidlib'
+    compileSdk 37
+    defaultConfig {
+        minSdk 29
+        resValue 'string', 'app_name', 'EWord'
+        buildConfigField 'String', 'GIT_COMMIT', '"31fe13e27b4e317249fe6229a172fdbf2c2106d9-eword1"'
+        buildConfigField 'boolean', 'GOOGLE_PLAY_ENABLED', 'false'
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+    buildFeatures { buildConfig true; resValues true }
+    sourceSets { main { assets.srcDirs = ['src/main/assets', 'runtime/assets']; jniLibs.srcDirs = ['runtime/jniLibs'] } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation 'r8:keepanno-annotations:9.3.16'
+}
+
+tasks.register('verifyOfficeRuntime') {
+    doLast {
+        def core = file('runtime/jniLibs/arm64-v8a/liblo-native-code.so')
+        def version = file('runtime/assets/program/versionrc')
+        if (!core.exists() || core.length() != 200234832L || !version.exists() || !version.text.contains('31fe13e27b') || !file('runtime/assets/dist/cool.html').exists()) {
+            throw new GradleException('Prepare the pinned offline Office engine: pwsh ../../verification/prepare-office-runtime.ps1 from upstream/android')
+        }
+    }
+}
+tasks.named('preBuild') { dependsOn('verifyOfficeRuntime') }

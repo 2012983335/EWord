@@ -233,6 +233,18 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     private suspend fun openFile(eng: Engine, uri: Uri, file: File, password: String?) {
         try {
             document?.let { saveAndClose(eng, it) }
+            if (withContext(Dispatchers.IO) { com.chethan616.clearpdf.engine.OfficeCompatibility.needsReader(file) }) {
+                document = null
+                inlineOffice = null
+                pendingTool = null
+                withContext(Dispatchers.IO) {
+                    val previous = recents.list().firstOrNull { it.uri == uri.toString() }
+                    recents.touch(RecentFile(uri.toString(), file.name, System.currentTimeMillis(), previous?.pages ?: 0, file.length(), previous?.lastPage ?: 0))
+                }
+                refreshRecents()
+                officeCompatFiles.send(file)
+                return
+            }
             val info = eng.command { open(file.absolutePath, password) }
             val images = PageImages(eng, info.id, viewModelScope, imageBudget)
             val source = uri.takeIf { it.scheme == "content" || it.scheme == "file" }
@@ -252,7 +264,8 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
             safety.opened(doc)
             if (doc.info.signed) announceSignatures(doc)
             // a PowerPoint 97-2003 file shows its slides' text: say so, once, as it opens
-            if (doc.info.name.substringAfterLast('.').lowercase() in setOf("ppt", "pps", "pot")) tell(text(R.string.msg_ppt_text_only))
+            if (doc.info.kind == com.chethan616.clearpdf.core.DocumentKind.SLIDES &&
+                doc.info.name.substringAfterLast('.').lowercase() in setOf("ppt", "pps", "pot")) tell(text(R.string.msg_ppt_text_only))
             startPendingTool(doc)
             pendingPage = recent?.lastPage?.takeIf { it in 0 until info.pages.size }
             pendingSpot = recent?.takeIf { pendingPage != null && it.lastX >= 0f && it.lastY >= 0f }?.let { Triple(it.lastX, it.lastY, it.lastZoom) }
@@ -270,6 +283,8 @@ class AppViewModel(app: Application, private val saved: SavedStateHandle) : Andr
     }
 
     /** The page to show once the viewer has laid the document out (reopening where the reader left off). */
+    val officeCompatFiles = Channel<File>(Channel.BUFFERED)
+
     var pendingPage: Int? = null
 
     /** With [pendingPage]: the spot (points) at the screen's top-left and the zoom it was left at. */

@@ -69,6 +69,9 @@
                 <data android:mimeType="text/comma-separated-values" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="application/vnd.ms-powerpoint" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation-template" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation-flat-xml" />
                 <data android:mimeType="application/vnd.ms-excel" />
                 <data android:mimeType="text/markdown" />
             </intent-filter>
@@ -98,6 +101,9 @@
                 <data android:mimeType="text/comma-separated-values" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="application/vnd.ms-powerpoint" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation-template" />
+                <data android:mimeType="application/vnd.oasis.opendocument.presentation-flat-xml" />
                 <data android:mimeType="application/vnd.ms-excel" />
                 <data android:mimeType="text/markdown" />
             </intent-filter>

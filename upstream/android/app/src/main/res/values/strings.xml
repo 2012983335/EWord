@@ -1029,7 +1029,7 @@
     <string name="photo_saturation">Saturation</string>
     <string name="photo_rotate">Rotate</string>
     <string name="photo_edit">Edit picture</string>
-    <string name="msg_ppt_text_only">This PowerPoint 97–2003 file shows its slides\' text. Saved as .pptx, it opens with its pictures and layout.</string>
+    <string name="msg_ppt_text_only">Legacy PPT text preview: pictures, equations and original layout are not supported. Convert the original file to PDF or PPTX in PowerPoint/WPS for a complete view.</string>
     <string name="photo_original">Original</string>
     <string name="photo_reset">Reset</string>
     <string name="photo_not_saved">The picture couldn\'t be saved.</string>
@@ -1536,4 +1536,5 @@
     <string name="signature_eraser_hint">Enable the eraser and drag over unwanted ink. Each gesture can be undone or redone.</string>
     <string name="signature_erase_empty">No visible signature remains. Undo erasing or import another image.</string>
     <string name="signature_erase_failed">Could not prepare the signature. Please try again.</string>
+    <string name="office_compat_saved">Compatibility reader (saved version)</string>
 </resources>

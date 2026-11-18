@@ -1139,7 +1139,9 @@ fn a_powerpoint_97_2003_file_opens_with_its_slides_text() {
     assert_eq!(info.kind, DocumentKind::Slides);
     assert_eq!(info.pages.len(), 2);
     assert_eq!(s.find_in_page(info.id, 1, "new markets".into(), false, false).unwrap().len(), 1);
-    assert!(s.render_page(info.id, 0, 0.5, None).is_ok());
+    let image = s.render_page(info.id, 0, 0.5, None).unwrap();
+    assert!(image.rgba.chunks_exact(4).filter(|p| p[0] < 160 && p[1] < 160 && p[2] < 160).count() > 50,
+        "legacy slides must paint visible text, not just return an empty bitmap");
 }
 
 #[test]

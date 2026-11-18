@@ -126,6 +126,30 @@ class MainActivity : ComponentActivity() {
 
     /** The view model's requests that need the activity: other apps, pickers, the camera, printing. */
     private fun collectRequests() {
+        lifecycleScope.launch {
+            for (file in vm.officeCompatFiles) {
+                var copy: File? = null
+                try {
+                    copy = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val folder = File(cacheDir, "share/officecompat/${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+                        File(folder, file.name).also {
+                            try { file.copyTo(it) } catch (failure: Exception) { it.delete(); folder.delete(); throw failure }
+                        }
+                    }
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", copy)
+                    startActivity(Intent(Intent.ACTION_VIEW).setClassName(this@MainActivity, "org.libreoffice.androidlib.LOActivity")
+                        .setDataAndType(uri, DocumentTypes.mimeOf(file.name))
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra("eword.readOnly", true))
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    copy?.delete()
+                    throw cancelled
+                } catch (failure: Exception) {
+                    copy?.delete()
+                    vm.tell(failure.message ?: "无法打开兼容阅读器")
+                }
+            }
+        }
         lifecycleScope.launch { for (request in vm.transferFolders) launchSafely { transferFolder.launch(null) } }
         lifecycleScope.launch { for (request in vm.scanPhotoPicks) launchSafely { pickScanPhotos.launch(arrayOf("image/*")) } }
         lifecycleScope.launch {

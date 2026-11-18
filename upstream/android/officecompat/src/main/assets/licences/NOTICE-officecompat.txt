@@ -1,0 +1,9 @@
+EWord Office compatibility reader reuses Collabora Office / LibreOffice.
+MPL-2.0 source: https://github.com/CollaboraOnline/online.mirror/tree/31fe13e27b4e317249fe6229a172fdbf2c2106d9
+Official ARM64 build: 26.04.7.0-979 (2026-11-10).
+APK SHA256: 903b78d7614c289aacaed3d5555a3f3825dda2a4fc6034e112eba5b2f2217a52
+Corresponding Android Java source is in upstream/android/officecompat/src/main/java.
+EWord changes: isolated process and preferences, read-only single-file launch,
+no request for all-files permission, Gradle packaging of pinned runtime.
+Full upstream third-party notices and licences: packaged assets/license.html and assets/notice.txt.
+No affiliation with or endorsement by Collabora is implied.

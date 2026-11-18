@@ -240,6 +240,8 @@ abstract class OcrModels : DefaultTask() {
 }
 
 android {
+    // Office uses NDK 29's C++ runtime; verify the packaged copy and both native engines before release.
+    packaging { jniLibs.pickFirsts.add("lib/arm64-v8a/libc++_shared.so") }
     namespace = "com.chethan616.clearpdf"
     compileSdk = 37
     ndkVersion = "29.0.14206865"
@@ -399,6 +401,7 @@ tasks.configureEach {
 }
 
 dependencies {
+    implementation(project(":officecompat"))
     implementation(files("libs/foxlet-v0.5.0.aar"))
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("com.burhanrashid52:photoeditor:3.1.1")

@@ -479,4 +479,6 @@
     <string name="signature_eraser_hint">开启橡皮擦后涂抹多余笔迹，每次擦除均可撤销或重做。</string>
     <string name="signature_erase_empty">签名已被全部擦除，请撤销擦除或重新导入图片。</string>
     <string name="signature_erase_failed">签名处理失败，请重试。</string>
+    <string name="msg_ppt_text_only">旧版 PPT 文字兼容预览：暂不支持图片、公式和原排版。请用 PowerPoint/WPS 将原文件另存为 PDF 或 PPTX 后查看完整内容。</string>
+    <string name="office_compat_saved">兼容阅读（已保存版本）</string>
 </resources>

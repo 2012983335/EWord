@@ -1,6 +1,6 @@
 # EWord
 
-中文、离线、免登录的 Android 文档工具。当前发布版本 **0.4.12**，支持 Android 10 及以上的 **ARM64** 设备。
+中文、离线、免登录的 Android 文档工具。当前发布版本 **0.4.14**，支持 Android 10 及以上的 **ARM64** 设备。
 
 0.4.9 支持在 XLSX 单元格和 PPTX 文字段落的原位置直接输入，不再弹出编辑对话框；支持另存副本。使用方式、限制和核验结果见 [0.4.9 说明](docs/RELEASE-0.4.9.md)。
 
@@ -10,14 +10,16 @@
 
 0.4.12 增加拍照/图片签名橡皮擦、擦除大小调节、撤销与重做，初始裁剪框四边各内缩 10%。见 [详细更新说明](docs/RELEASE-0.4.12.md)。
 
+0.4.14 内置完整离线 Office 兼容阅读引擎，新增 ODP/OTP/FODP 入口和 Office 已保存版本的兼容阅读。安装包约 465 MB。见 [更新说明](docs/RELEASE-0.4.14.md)。
+
 ## 安装
 
-从[本仓库最新发布](https://github.com/2012983335/EWord/releases/latest) 下载 `EWord-0.4.12-offline-arm64.apk`，允许系统安装该来源的应用。已安装旧版时可覆盖安装；不要先卸载，以免丢失应用私有数据。更新必须使用相同签名。
+从[本仓库最新发布](https://github.com/2012983335/EWord/releases/latest) 下载 `EWord-0.4.14-offline-arm64.apk`，允许系统安装该来源的应用。已安装旧版时可覆盖安装；不要先卸载，以免丢失应用私有数据。更新必须使用相同签名。
 
 APK SHA-256：
 
 ```text
-219aaa0e9bce3b4ea26611eb211632a06c201f9503e602ab45fe6335c7160746
+2519fde9d66466b3da31391ee4b037a4c2d502ada826e2e419233adaff9e4b0d
 ```
 
 ## 功能
@@ -45,6 +47,7 @@ APK SHA-256：
 ```powershell
 cargo install cargo-ndk --version 4.1.2 --locked
 rustup target add aarch64-linux-android
+pwsh ./verification/prepare-office-runtime.ps1
 cd upstream/android
 ./gradlew.bat '-Partefact.abis=arm64-v8a' assembleRelease
 ```
